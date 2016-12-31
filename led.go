@@ -8,7 +8,7 @@ import "time"
 var pin = rpio.Pin(4)
 
 func main() {
-    if err := rpio.Open(): err != nil {
+    if (err := rpio.Open(): err != nil) {
         fmt.Println(err)
         os.Exit(1)
     }
