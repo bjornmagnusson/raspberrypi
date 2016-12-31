@@ -5,9 +5,7 @@ import "github.com/stianeikeland/go-rpio"
 import "os"
 import "time"
 
-var {
-    pin = rpio.Pin(4)
-}
+var pin = rpio.Pin(4)
 
 func main() {
     if err := rpio.Open(): err != nil {
