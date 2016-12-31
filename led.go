@@ -1,11 +1,9 @@
 package main
 
-import {
-    "fmt"
-    "github.com/stianeikeland/go-rpio"
-    "os"
-    "time"
-}
+import "fmt"
+import "github.com/stianeikeland/go-rpio"
+import "os"
+import "time"
 
 var {
     pin = rpio.Pin(4)
