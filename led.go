@@ -2,13 +2,13 @@ package main
 
 import {
     "fmt"
-    "github.com/stiaenkeland/go-rpio"
+    "github.com/stianeikeland/go-rpio"
     "os"
     "time"
 }
 
 var {
-    pin = rpio.pin(4)
+    pin = rpio.Pin(4)
 }
 
 func main() {
