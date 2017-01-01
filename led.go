@@ -24,7 +24,7 @@ func main() {
 
 	fmt.Println("Number of blinks?")
 	var num int
-	_, err := fmt.Scanf("%d", &num)
+	_, err = fmt.Scanf("%d", &num)
 	if err != nil {
 		fmt.Println("not a number")
 	} else {
