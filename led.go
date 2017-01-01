@@ -32,7 +32,7 @@ func main() {
 	fmt.Println("Pin as output")
 	pin.Output()
 
-	for i := 0; i < num; i++ {
+	for i := 0; i < *num; i++ {
 		fmt.Println("Toggle")
 		pin.Toggle()
 		time.Sleep(time.Second)
