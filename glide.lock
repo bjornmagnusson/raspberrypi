@@ -1,0 +1,6 @@
+hash: be71691c76d1ff872aa2c992ca52cdec6153211b29436f6935bc7fd41a61ce65
+updated: 2017-01-01T22:05:33.8859765+01:00
+imports:
+- name: github.com/stianeikeland/go-rpio
+  version: 896db2ee1c7f95240dd6a09e56edf9cece107a34
+testImports: []

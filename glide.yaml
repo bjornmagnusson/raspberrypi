@@ -1,0 +1,4 @@
+package: .
+import:
+- package: github.com/stianeikeland/go-rpio
+  version: v3.0.0
