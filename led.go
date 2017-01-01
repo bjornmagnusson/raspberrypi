@@ -16,7 +16,7 @@ func main() {
 	num := flag.Int("num", 0, "number of blinks")
 	flag.Parse()
 
-	fmt.Println(num)
+	fmt.Println("Number of blinks: ", *num)
 
 	fmt.Println("Opening rpio access")
 
