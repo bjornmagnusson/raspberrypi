@@ -24,7 +24,7 @@ func main() {
 
 	fmt.Println("Number of blinks?")
 	var num int
-	_, err := fmt.Scanf("%d", &i)
+	_, err := fmt.Scanf("%d", &num)
 	if err != nil {
 		fmt.Println("not a number")
 	} else {
@@ -32,7 +32,7 @@ func main() {
 		fmt.Println(" is a number")
 	}
 
-	for i := 0; i < i; i++ {
+	for i := 0; i < num; i++ {
 		fmt.Println("Toggle")
 		pin.Toggle()
 		time.Sleep(time.Second)
