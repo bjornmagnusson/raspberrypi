@@ -28,7 +28,7 @@ func main() {
 	if err != nil {
 		fmt.Println("not a number")
 	} else {
-		fmt.Print(i)
+		fmt.Print(num)
 		fmt.Println(" is a number")
 	}
 
