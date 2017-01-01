@@ -16,6 +16,8 @@ func main() {
 	num := flag.Int("num", 0, "number of blinks")
 	flag.Parse()
 
+	fmt.Println(num)
+
 	fmt.Println("Opening rpio access")
 
 	var err = rpio.Open()
