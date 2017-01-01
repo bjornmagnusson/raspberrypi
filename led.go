@@ -8,23 +8,33 @@ import "time"
 var pin = rpio.Pin(4)
 
 func main() {
-    fmt.Println("Opening rpio")
+	fmt.Println("Opening rpio access")
 
-    var err = rpio.Open()
+	var err = rpio.Open()
 
-    if err != nil {
-        fmt.Println(err)
-        os.Exit(1)
-    }
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-    defer rpio.Close()
+	defer rpio.Close()
 
-    fmt.Println("Pin as output")
-    pin.Output()
+	fmt.Println("Pin as output")
+	pin.Output()
 
-    for i := 0; i < 20; i++ {
-        fmt.Println("Toggle")
-        pin.Toggle()
-        time.Sleep(time.Second)
-    }
+	fmt.Println("Number of blinks?")
+	var num int
+	_, err := fmt.Scanf("%d", &i)
+	if err != nil {
+		fmt.Println("not a number")
+	} else {
+		fmt.Print(i)
+		fmt.Println(" is a number")
+	}
+
+	for i := 0; i < i; i++ {
+		fmt.Println("Toggle")
+		pin.Toggle()
+		time.Sleep(time.Second)
+	}
 }
