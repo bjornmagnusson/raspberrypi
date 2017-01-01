@@ -1,13 +1,21 @@
 package main
 
-import "fmt"
-import "github.com/stianeikeland/go-rpio"
-import "os"
-import "time"
+import (
+	"flag"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/stianeikeland/go-rpio"
+)
 
 var pin = rpio.Pin(4)
 
 func main() {
+	fmt.Println("Parsing parameters")
+	num := flag.Int("num", 0, "number of blinks")
+	flag.Parse()
+
 	fmt.Println("Opening rpio access")
 
 	var err = rpio.Open()
@@ -21,16 +29,6 @@ func main() {
 
 	fmt.Println("Pin as output")
 	pin.Output()
-
-	fmt.Println("Number of blinks?")
-	var num int
-	_, err = fmt.Scanf("%d", &num)
-	if err != nil {
-		fmt.Println("not a number")
-	} else {
-		fmt.Print(num)
-		fmt.Println(" is a number")
-	}
 
 	for i := 0; i < num; i++ {
 		fmt.Println("Toggle")
