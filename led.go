@@ -15,6 +15,11 @@ var (
 	ledGreen = rpio.Pin(27)
 )
 
+func toggleLED(pin rpio.Pin, string color)  {
+	fmt.Println("Toggle ", color)
+	pin.Toggle()
+}
+
 func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 0, "number of blinks")
@@ -40,14 +45,11 @@ func main() {
 
 	for i := 0; i < *num; i++ {
 		if i % 3 == 0 {
-			fmt.Println("Toggle RED")
-			ledRed.Toggle()
+			toggleLED(ledRed, "red")
 		} else if i % 3 == 1 {
-			fmt.Println("Toggle YELLOW")
-			ledYellow.Toggle()
+			toggleLED(ledYellow, "yellow")
 		} else {
-			fmt.Println("Toggle GREEN")
-			ledGreen.Toggle()
+			toggleLED(ledGreen, "green")
 		}
 		time.Sleep(time.Second)
 	}
