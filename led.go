@@ -17,7 +17,7 @@ var (
 )
 
 func toggleLED(pin rpio.Pin, color string)  {
-	fmt.Println("Toggle", strings.toUpper(color))
+	fmt.Println("Toggle", strings.ToUpper(color))
 	pin.Toggle()
 }
 
