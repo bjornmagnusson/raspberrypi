@@ -22,7 +22,7 @@ func TestLEDStringRed(t *testing.T) {
 
 func TestLEDStringYellow(t *testing.T) {
     expected := "Toggle YELLOW"
-    actual := getLEDString("yell")
+    actual := getLEDString("yellow")
 
     if actual != expected {
         t.Errorf("Test failed, expected: %s, got: %s", expected, actual)
