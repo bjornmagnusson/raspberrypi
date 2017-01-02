@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"time"
-
+	//"github.com/kidoman/embd"
 	"github.com/stianeikeland/go-rpio"
 )
 
-var pin = rpio.Pin(4)
+var (
+	ledRed = rpio.Pin(4)
+	ledYellow = rpio.Pin(17)
+	ledGreen = rpio.Pin(27)
+)
 
 func main() {
 	fmt.Println("Parsing parameters")
@@ -30,11 +34,21 @@ func main() {
 	defer rpio.Close()
 
 	fmt.Println("Pin as output")
-	pin.Output()
+	ledRed.Output()
+	ledYellow.Output()
+	ledGreen.Output()
 
 	for i := 0; i < *num; i++ {
-		fmt.Println("Toggle")
-		pin.Toggle()
+		if i % 3 == 0 {
+			fmt.Println("Toggle RED")
+			ledRed.Toggle()
+		} else if i % 3 == 1 {
+			fmt.Println("Toggle YELLOW")
+			ledYellow.Toggle()
+		} else {
+			fmt.Println("Toggle GREEN")
+			ledGreen.Toggle()
+		}
 		time.Sleep(time.Second)
 	}
 }
