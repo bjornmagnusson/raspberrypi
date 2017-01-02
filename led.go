@@ -16,8 +16,12 @@ var (
 	ledGreen = rpio.Pin(27)
 )
 
+func getLEDString(color string) string {
+	return "Toggle" + strings.ToUpper(color)
+}
+
 func toggleLED(pin rpio.Pin, color string)  {
-	fmt.Println("Toggle", strings.ToUpper(color))
+	fmt.Println(getLEDString(color))
 	pin.Toggle()
 }
 
