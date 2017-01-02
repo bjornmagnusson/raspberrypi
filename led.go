@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"strings"
 	//"github.com/kidoman/embd"
 	"github.com/stianeikeland/go-rpio"
 )
@@ -16,8 +17,14 @@ var (
 )
 
 func toggleLED(pin rpio.Pin, color string)  {
-	fmt.Println("Toggle ", color)
+	fmt.Println("Toggle", strings.toUpper(color))
 	pin.Toggle()
+}
+
+func initLEDs() {
+	ledRed.Output()
+	ledYellow.Output()
+	ledGreen.Output()
 }
 
 func main() {
@@ -25,7 +32,7 @@ func main() {
 	num := flag.Int("num", 0, "number of blinks")
 	flag.Parse()
 
-	fmt.Println("Number of blinks: ", *num)
+	fmt.Println("Number of blinks:", *num)
 
 	fmt.Println("Opening rpio access")
 
@@ -39,9 +46,7 @@ func main() {
 	defer rpio.Close()
 
 	fmt.Println("Pin as output")
-	ledRed.Output()
-	ledYellow.Output()
-	ledGreen.Output()
+
 
 	for i := 0; i < *num; i++ {
 		if i % 3 == 0 {
