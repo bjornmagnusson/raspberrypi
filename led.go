@@ -40,7 +40,7 @@ func toggleLED(pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
 	toggledValue := getToggledValue(pin)
 	fmt.Println("Val to write", toggledValue)
-	pin.Write()
+	pin.Write(toggledValue)
 }
 
 // func toggleLED(pin rpio.Pin, color string)  {
