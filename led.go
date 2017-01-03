@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
-	//"os"
+	"os"
 	"strings"
 	"time"
 	//"github.com/stianeikeland/go-rpio"
@@ -40,7 +40,11 @@ func toggleLED(pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
 	toggledValue := getToggledValue(pin)
 	fmt.Println("Val to write", toggledValue)
-	pin.Write(toggledValue)
+	err := pin.Write(toggledValue)
+	if err != nil {
+ 		fmt.Println(err)
+ 		os.Exit(1)
+	}
 }
 
 // func toggleLED(pin rpio.Pin, color string)  {
