@@ -12,6 +12,8 @@ import (
 )
 
 var (
+	mode = 0 // 0=go-rpio,1=embd
+
 	ledRed = rpio.Pin(4)
 	ledYellow = rpio.Pin(17)
 	ledGreen = rpio.Pin(27)
@@ -45,6 +47,7 @@ func getToggledValue(pin embd.DigitalPin) int {
 
 func toggleLED(pin rpio.Pin, color string)  {
 	fmt.Println(getLEDString(color))
+	fmt.Println("Current value:",pin.Read())
 	pin.Toggle()
 }
 
