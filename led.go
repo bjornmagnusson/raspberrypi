@@ -36,17 +36,12 @@ func getToggledValue(pin embd.DigitalPin) int {
 	}
 }
 
-func toggleLED(pin embd.DigitalPin, color string) {
-	fmt.Println(getLEDString(color))
-	toggledValue := getToggledValue(pin)
-	fmt.Println("Val to write", toggledValue)
-	embd.DigitalWrite(pin.N(), embd.High)
-	// err := pin.Write(toggledValue)
-	// if err != nil {
- // 		fmt.Println(err)
- // 		os.Exit(1)
-	// }
-}
+// func toggleLED(pin embd.DigitalPin, color string) {
+// 	fmt.Println(getLEDString(color))
+// 	toggledValue := getToggledValue(pin)
+// 	fmt.Println("Val to write", toggledValue)
+// 	embd.DigitalWrite(pin.N(), embd.High)
+// }
 
 func toggleLED(pin rpio.Pin, color string)  {
 	fmt.Println(getLEDString(color))
@@ -54,9 +49,9 @@ func toggleLED(pin rpio.Pin, color string)  {
 }
 
 func initLEDs() {
-	// embd.SetDirection(4, embd.Out)
-	// embd.SetDirection(17, embd.Out)
-	// embd.SetDirection(27, embd.Out)
+	// ledRed.SetDirection(embd.Out)
+	// ledYellow.SetDirection(embd.Out)
+	// ledGreen.SetDirection(embd.Out)
 	ledRed.Output()
 	ledYellow.Output()
 	ledGreen.Output()
