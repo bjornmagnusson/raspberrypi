@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
-	"os"
+	//"os"
 	"strings"
 	"time"
 	//"github.com/stianeikeland/go-rpio"
