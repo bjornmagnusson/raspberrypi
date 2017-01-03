@@ -40,6 +40,7 @@ func toggleLED(pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
 	toggledValue := getToggledValue(pin)
 	fmt.Println("Val to write", toggledValue)
+	embd.DigitalWrite(pin.N(), embd.High)
 	err := pin.Write(toggledValue)
 	if err != nil {
  		fmt.Println(err)
