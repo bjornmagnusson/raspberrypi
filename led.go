@@ -3,32 +3,56 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"time"
+	"github.com/kidoman/embd"
+	_ "github.com/kidoman/embd/host/all"
+	//"os"
 	"strings"
-	//"github.com/kidoman/embd"
-	"github.com/stianeikeland/go-rpio"
+	"time"
+	//"github.com/stianeikeland/go-rpio"
 )
 
+// var (
+// 	ledRed = rpio.Pin(4)
+// 	ledYellow = rpio.Pin(17)
+// 	ledGreen = rpio.Pin(27)
+// )
+
 var (
-	ledRed = rpio.Pin(4)
-	ledYellow = rpio.Pin(17)
-	ledGreen = rpio.Pin(27)
+	ledRed, _    = embd.NewDigitalPin(4)
+	ledYellow, _ = embd.NewDigitalPin(17)
+	ledGreen, _  = embd.NewDigitalPin(27)
 )
 
 func getLEDString(color string) string {
 	return "Toggle " + strings.ToUpper(color)
 }
 
-func toggleLED(pin rpio.Pin, color string)  {
-	fmt.Println(getLEDString(color))
-	pin.Toggle()
+func getToggledValue(pin embd.DigitalPin) int {
+	val,_ := pin.Read()
+	if val == embd.High {
+		return embd.Low
+	} else {
+		return embd.High
+	}
 }
 
+func toggleLED(pin embd.DigitalPin, color string) {
+	fmt.Println(getLEDString(color))
+	pin.Write(getToggledValue(pin))
+}
+
+// func toggleLED(pin rpio.Pin, color string)  {
+// 	fmt.Println(getLEDString(color))
+// 	pin.Toggle()
+// }
+
 func initLEDs() {
-	ledRed.Output()
-	ledYellow.Output()
-	ledGreen.Output()
+	embd.SetDirection(4, embd.Out)
+	embd.SetDirection(17, embd.Out)
+	embd.SetDirection(27, embd.Out)
+	// ledRed.Output()
+	// ledYellow.Output()
+	// ledGreen.Output()
 }
 
 func main() {
@@ -40,22 +64,23 @@ func main() {
 
 	fmt.Println("Opening rpio access")
 
-	var err = rpio.Open()
+	//var err = rpio.Open()
+	embd.InitGPIO()
 
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	os.Exit(1)
+	// }
 
-	defer rpio.Close()
+	//defer rpio.Close()
+	defer embd.CloseGPIO()
 
 	fmt.Println("Pin as output")
 
-
 	for i := 0; i < *num; i++ {
-		if i % 3 == 0 {
+		if i%3 == 0 {
 			toggleLED(ledRed, "red")
-		} else if i % 3 == 1 {
+		} else if i%3 == 1 {
 			toggleLED(ledYellow, "yellow")
 		} else {
 			toggleLED(ledGreen, "green")

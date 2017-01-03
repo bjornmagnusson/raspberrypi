@@ -1,6 +1,10 @@
-hash: be71691c76d1ff872aa2c992ca52cdec6153211b29436f6935bc7fd41a61ce65
-updated: 2017-01-01T22:05:33.8859765+01:00
+hash: 2e43ea0bdc6620d5c6a4cc5cd30b8be86b4424eff3baabf3dcdeba809b6c0cc3
+updated: 2017-01-03T21:16:20.1959801+01:00
 imports:
+- name: github.com/golang/glog
+  version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
+- name: github.com/kidoman/embd
+  version: adc3d473054c5f066be48c9459107f70021c34a4
 - name: github.com/stianeikeland/go-rpio
   version: 896db2ee1c7f95240dd6a09e56edf9cece107a34
 testImports: []
