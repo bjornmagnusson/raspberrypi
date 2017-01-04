@@ -1,5 +1,6 @@
 FROM hypriot/rpi-golang
 
-COPY led .
+COPY led /usr/local/bin
+RUN chmod +x /usr/local/bin/led
 
-CMD [./led]
+CMD /usr/local/bin/led
