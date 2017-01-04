@@ -77,6 +77,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	initLEDs()
+
 	defer rpio.Close()
 	// defer embd.CloseGPIO()
 
