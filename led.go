@@ -14,12 +14,17 @@ import (
 var (
 	mode = 0 // 0=go-rpio,1=embd
 
+	// LEDs
 	ledRedPin    = 4
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
 	ledMapEmbd = map[int]embd.DigitalPin{}
 	ledMap     = map[int]rpio.Pin{}
+
+	// Buttons
+	buttonPin = 22
+	buttonMap = map[int]embd.DigitalPin{}
 )
 
 func getLEDString(color string) string {
@@ -46,6 +51,21 @@ func toggleLED(pin rpio.Pin, color string) {
 	fmt.Println(getLEDString(color))
 	fmt.Println("Current value:", pin.Read())
 	pin.Toggle()
+}
+
+func initButtons() {
+	buttonMap[0],_ = embd.NewDigitalPin(buttonPin)
+	buttonMap[0].SetDirection(embd.In)
+	buttonMap[0].ActiveLow(false)
+	quit := make(chan interface{})
+	err := buttonMap[0].Watch(embd.EdgeFalling, func(btn embd.DigitalPin) {
+		fmt.Println("Pressed", btn)
+		quit <- btn
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Button %v was pressed.\n", <-quit)
 }
 
 func initLEDs() {
@@ -92,6 +112,7 @@ func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 3, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
+	button := flag.Bool("button", false, "button mode")
 
 	flag.Parse()
 	mode = *modeFromCli
@@ -110,6 +131,9 @@ func main() {
 	}
 
 	initLEDs()
+	if mode == 1 && *button {
+		initButtons()
+	}
 
 	if mode == 1 {
 		defer embd.CloseGPIO()
@@ -117,15 +141,17 @@ func main() {
 		defer rpio.Close()
 	}
 
-	if *num == 0 {
-		var counter = 0
-		for {
-			doLedToggling(counter)
-			counter++
-		}
-	} else {
-		for i := 0; i < *num; i++ {
-			doLedToggling(i)
+	if !*button {
+		if *num == 0 {
+			var counter = 0
+			for {
+				doLedToggling(counter)
+				counter++
+			}
+		} else {
+			for i := 0; i < *num; i++ {
+				doLedToggling(i)
+			}
 		}
 	}
 }
