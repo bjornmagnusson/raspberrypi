@@ -90,7 +90,7 @@ func initGPIO() error {
 
 func main() {
 	fmt.Println("Parsing parameters")
-	num := flag.Int("num", 0, "number of blinks")
+	num := flag.Int("num", 3, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
 	flag.Parse()
 	mode = *modeFromCli
