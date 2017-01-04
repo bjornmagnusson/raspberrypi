@@ -18,15 +18,6 @@ var (
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
-
-	ledRed    = rpio.Pin(4)
-	ledYellow = rpio.Pin(17)
-	ledGreen  = rpio.Pin(27)
-
-	ledRedEmbd, _    = embd.NewDigitalPin(4)
-	ledYellowEmbd, _ = embd.NewDigitalPin(17)
-	ledGreenEmbd, _  = embd.NewDigitalPin(27)
-
 	ledMapEmbd = map[int]embd.DigitalPin{}
 	ledMap     = map[int]rpio.Pin{}
 )
@@ -59,17 +50,17 @@ func toggleLED(pin rpio.Pin, color string) {
 
 func initLEDs() {
 	if mode == 1 {
-		ledMapEmbd[0] = ledRedEmbd
-		ledMapEmbd[1] = ledYellowEmbd
-		ledMapEmbd[2] = ledGreenEmbd
+		ledMapEmbd[0],_ = embd.NewDigitalPin(ledRedPin)
+		ledMapEmbd[1],_ = embd.NewDigitalPin(ledYellowPin)
+		ledMapEmbd[2],_ = embd.NewDigitalPin(ledGreenPin)
 		for i := 0; i < len(ledMapEmbd); i++ {
 			ledMapEmbd[i].SetDirection(embd.Out)
 			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
 		}
 	} else {
-		ledMap[0] = ledRed
-		ledMap[1] = ledYellow
-		ledMap[2] = ledGreen
+		ledMap[0] = rpio.Pin(ledRedPin)
+		ledMap[1] = rpio.Pin(ledYellowPin)
+		ledMap[2] = rpio.Pin(ledGreenPin)
 		for i := 0; i < len(ledMap); i++ {
 			ledMap[i].Output()
 			ledMap[i].Low()
@@ -92,6 +83,7 @@ func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 3, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
+
 	flag.Parse()
 	mode = *modeFromCli
 	if mode == 1 {
