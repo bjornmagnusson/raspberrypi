@@ -23,9 +23,9 @@ var (
 	ledYellow = rpio.Pin(17)
 	ledGreen  = rpio.Pin(27)
 
-	ledRedEmbd, _    = embd.NewDigitalPin(7)
-	ledYellowEmbd, _ = embd.NewDigitalPin(0)
-	ledGreenEmbd, _  = embd.NewDigitalPin(2)
+	ledRedEmbd, _    = embd.NewDigitalPin(4)
+	ledYellowEmbd, _ = embd.NewDigitalPin(17)
+	ledGreenEmbd, _  = embd.NewDigitalPin(27)
 
 	ledMapEmbd = map[int]embd.DigitalPin{}
 	ledMap     = map[int]rpio.Pin{}
