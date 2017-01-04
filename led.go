@@ -14,16 +14,22 @@ import (
 var (
 	mode = 0 // 0=go-rpio,1=embd
 
+	ledRedPin = 4
+	ledYellowPin = 17
+	ledGreenPin = 27
+	ledToColor = map[int]string{}
+
 	ledRed = rpio.Pin(4)
 	ledYellow = rpio.Pin(17)
 	ledGreen = rpio.Pin(27)
-)
 
-// var (
-// 	ledRed, _    = embd.NewDigitalPin(7)
-// 	ledYellow, _ = embd.NewDigitalPin(0)
-// 	ledGreen, _  = embd.NewDigitalPin(2)
-// )
+	ledRedEmbd, _    = embd.NewDigitalPin(7)
+	ledYellowEmbd, _ = embd.NewDigitalPin(0)
+	ledGreenEmbd, _  = embd.NewDigitalPin(2)
+
+	ledMapEmbd = map[int]embd.DigitalPin{}
+	ledMapRpio = map[int]rpio.Pin{}
+)
 
 func getLEDString(color string) string {
 	return "Toggle " + strings.ToUpper(color)
@@ -52,12 +58,18 @@ func toggleLED(pin rpio.Pin, color string)  {
 }
 
 func initLEDs() {
-	// ledRed.SetDirection(embd.Out)
-	// ledYellow.SetDirection(embd.Out)
-	// ledGreen.SetDirection(embd.Out)
-	ledRed.Output()
-	ledYellow.Output()
-	ledGreen.Output()
+	if mode == 1 {
+		ledRedEmbd.SetDirection(embd.Out)
+		ledYellowEmbd.SetDirection(embd.Out)
+		ledGreenEmbd.SetDirection(embd.Out)
+	} else {
+		ledRed.Output()
+		ledYellow.Output()
+		ledGreen.Output()
+		ledToColor[0] = "red"
+		ledToColor[1] = "yellow"
+		ledToColor[2] = "green"
+	}
 }
 
 func main() {
@@ -79,18 +91,21 @@ func main() {
 
 	initLEDs()
 
-	defer rpio.Close()
-	// defer embd.CloseGPIO()
+	if mode == 1 {
+		defer embd.CloseGPIO()
+	} else {
+		defer rpio.Close()
+	}
 
 	fmt.Println("Pin as output")
 
 	for i := 0; i < *num; i++ {
 		if i%3 == 0 {
-			toggleLED(ledRed, "red")
+			toggleLED(ledRed, ledToColor[0])
 		} else if i%3 == 1 {
-			toggleLED(ledYellow, "yellow")
+			toggleLED(ledYellow, ledToColor[1])
 		} else {
-			toggleLED(ledGreen, "green")
+			toggleLED(ledGreen, ledToColor[2])
 		}
 		time.Sleep(time.Second)
 	}
