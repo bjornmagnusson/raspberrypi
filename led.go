@@ -79,6 +79,15 @@ func initGPIO() error {
 	}
 }
 
+func doLedToggling(i int) {
+	if mode == 1 {
+		toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
+	} else {
+		toggleLED(ledMap[i%3], ledToColor[i%3])
+	}
+	time.Sleep(time.Second)
+}
+
 func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 3, "number of blinks")
@@ -108,12 +117,15 @@ func main() {
 		defer rpio.Close()
 	}
 
-	for i := 0; i < *num; i++ {
-		if mode == 1 {
-			toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
-		} else {
-			toggleLED(ledMap[i%3], ledToColor[i%3])
+	if *num == 0 {
+		var counter = 0
+		for {
+			doLedToggling(counter)
+			counter++
 		}
-		time.Sleep(time.Second)
+	} else {
+		for i := 0; i < *num; i++ {
+			doLedToggling(i)
+		}
 	}
 }
