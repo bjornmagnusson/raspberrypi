@@ -89,6 +89,11 @@ func main() {
 	modeFromCli := flag.Int("mode", 0, "mode")
 	mode = *modeFromCli
 	flag.Parse()
+	if mode == 1 {
+		fmt.Println("Running using Embd.io")
+	} else {
+		fmt.Println("Running using go-rpio")
+	}
 
 	fmt.Println("Number of blinks:", *num)
 
