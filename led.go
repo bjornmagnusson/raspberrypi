@@ -5,30 +5,30 @@ import (
 	"fmt"
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
+	"github.com/stianeikeland/go-rpio"
 	"os"
 	"strings"
 	"time"
-	"github.com/stianeikeland/go-rpio"
 )
 
 var (
 	mode = 0 // 0=go-rpio,1=embd
 
-	ledRedPin = 4
+	ledRedPin    = 4
 	ledYellowPin = 17
-	ledGreenPin = 27
-	ledToColor = map[int]string{}
+	ledGreenPin  = 27
+	ledToColor   = map[int]string{}
 
-	ledRed = rpio.Pin(4)
+	ledRed    = rpio.Pin(4)
 	ledYellow = rpio.Pin(17)
-	ledGreen = rpio.Pin(27)
+	ledGreen  = rpio.Pin(27)
 
 	ledRedEmbd, _    = embd.NewDigitalPin(7)
 	ledYellowEmbd, _ = embd.NewDigitalPin(0)
 	ledGreenEmbd, _  = embd.NewDigitalPin(2)
 
 	ledMapEmbd = map[int]embd.DigitalPin{}
-	ledMapRpio = map[int]rpio.Pin{}
+	ledMap     = map[int]rpio.Pin{}
 )
 
 func getLEDString(color string) string {
@@ -36,7 +36,7 @@ func getLEDString(color string) string {
 }
 
 func getToggledValue(pin embd.DigitalPin) int {
-	val,_ := pin.Read()
+	val, _ := pin.Read()
 	if val == embd.High {
 		return embd.Low
 	} else {
@@ -44,16 +44,16 @@ func getToggledValue(pin embd.DigitalPin) int {
 	}
 }
 
-// func toggleLED(pin embd.DigitalPin, color string) {
-// 	fmt.Println(getLEDString(color))
-// 	toggledValue := getToggledValue(pin)
-// 	fmt.Println("Val to write", toggledValue)
-// 	embd.DigitalWrite(pin.N(), embd.High)
-// }
-
-func toggleLED(pin rpio.Pin, color string)  {
+func toggleLEDEmbd(pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
-	fmt.Println("Current value:",pin.Read())
+	toggledValue := getToggledValue(pin)
+	fmt.Println("Val to write", toggledValue)
+	embd.DigitalWrite(pin.N(), embd.High)
+}
+
+func toggleLED(pin rpio.Pin, color string) {
+	fmt.Println(getLEDString(color))
+	fmt.Println("Current value:", pin.Read())
 	pin.Toggle()
 }
 
@@ -66,9 +66,20 @@ func initLEDs() {
 		ledRed.Output()
 		ledYellow.Output()
 		ledGreen.Output()
-		ledToColor[0] = "red"
-		ledToColor[1] = "yellow"
-		ledToColor[2] = "green"
+		ledMap[0] = ledRed
+		ledMap[1] = ledYellow
+		ledMap[2] = ledGreen
+	}
+	ledToColor[0] = "red"
+	ledToColor[1] = "yellow"
+	ledToColor[2] = "green"
+}
+
+func initGPIO() error {
+	if mode == 1 {
+		return embd.InitGPIO()
+	} else {
+		return rpio.Open()
 	}
 }
 
@@ -79,11 +90,7 @@ func main() {
 
 	fmt.Println("Number of blinks:", *num)
 
-	fmt.Println("Opening rpio access")
-
-	var err = rpio.Open()
-	// embd.InitGPIO()
-
+	var err = initGPIO()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -97,15 +104,11 @@ func main() {
 		defer rpio.Close()
 	}
 
-	fmt.Println("Pin as output")
-
 	for i := 0; i < *num; i++ {
-		if i%3 == 0 {
-			toggleLED(ledRed, ledToColor[0])
-		} else if i%3 == 1 {
-			toggleLED(ledYellow, ledToColor[1])
+		if mode == 1 {
+			toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
 		} else {
-			toggleLED(ledGreen, ledToColor[2])
+			toggleLED(ledMap[i%3], ledToColor[i%3])
 		}
 		time.Sleep(time.Second)
 	}
