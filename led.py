@@ -1,22 +1,14 @@
-import RPi.GPIO as GPIO
+from gpiozero import LED
 import time
 
-pins = [4, 17, 27]
-
-GPIO.setmode(GPIO.BCM)
-for pin in pins:
-	GPIO.setup(pin, GPIO.OUT)
+leds = [LED(4), LED(17), LED(27)]
 
 num_blinks = input("Number of blinks?")
 
 for i in range(num_blinks):
 	print "Lighting" + str(i)
-	for pin in pins:
-		GPIO.output(pin,True)
+	for led in leds:
+		led.on()
 		time.sleep(1)
-		GPIO.output(pin,False)
+		led.off()
 		time.sleep(1)
-
-print "Done"
-
-GPIO.cleanup()
