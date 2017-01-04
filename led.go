@@ -59,16 +59,21 @@ func toggleLED(pin rpio.Pin, color string) {
 
 func initLEDs() {
 	if mode == 1 {
-		ledRedEmbd.SetDirection(embd.Out)
-		ledYellowEmbd.SetDirection(embd.Out)
-		ledGreenEmbd.SetDirection(embd.Out)
+		ledMapEmbd[0] = ledRedEmbd
+		ledMapEmbd[1] = ledYellowEmbd
+		ledMapEmbd[2] = ledGreenEmbd
+		for i := 0; i < len(ledMapEmbd); i++ {
+			ledMapEmbd[i].SetDirection(embd.Out)
+			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
+		}
 	} else {
-		ledRed.Output()
-		ledYellow.Output()
-		ledGreen.Output()
 		ledMap[0] = ledRed
 		ledMap[1] = ledYellow
 		ledMap[2] = ledGreen
+		for i := 0; i < len(ledMap); i++ {
+			ledMap[i].Output()
+			ledMap[i].Low()
+		}
 	}
 	ledToColor[0] = "red"
 	ledToColor[1] = "yellow"
@@ -87,8 +92,8 @@ func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 0, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
-	mode = *modeFromCli
 	flag.Parse()
+	mode = *modeFromCli
 	if mode == 1 {
 		fmt.Println("Running using Embd.io")
 	} else {
