@@ -138,6 +138,7 @@ func main() {
 	num := flag.Int("num", 3, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
 	button := flag.Bool("button", false, "button mode")
+	api := flag.Bool("api", true, "API enabled")
 	flag.Parse()
 	mode = *modeFromCli
 	if mode == 1 {
@@ -147,7 +148,9 @@ func main() {
 	}
 	fmt.Println("Number of blinks:", *num)
 
-	go initWebServer()
+	if *api {
+		go initWebServer()	
+	}
 
 	var err = initGPIO()
 	if err != nil {
