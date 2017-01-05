@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
 	"github.com/stianeikeland/go-rpio"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -108,12 +110,29 @@ func doLedToggling(i int) {
 	time.Sleep(time.Second)
 }
 
+type Gpio struct {
+	ID int
+	Name string
+	Value int
+}
+
+func gpios (w http.ResponseWriter, r *http.Request) {
+
+    m := Gpio{1, "GPIO2", 1}
+    b, err := json.Marshal(m)
+
+    if err != nil {
+        panic(err)
+    }
+
+     w.Write(b)
+}
+
 func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 3, "number of blinks")
 	modeFromCli := flag.Int("mode", 0, "mode")
 	button := flag.Bool("button", false, "button mode")
-
 	flag.Parse()
 	mode = *modeFromCli
 	if mode == 1 {
@@ -121,8 +140,10 @@ func main() {
 	} else {
 		fmt.Println("Running using go-rpio")
 	}
-
 	fmt.Println("Number of blinks:", *num)
+
+	http.HandleFunc("/gpios", gpios)
+    http.ListenAndServe(":8080", nil)
 
 	var err = initGPIO()
 	if err != nil {
