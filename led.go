@@ -128,6 +128,11 @@ func gpios (w http.ResponseWriter, r *http.Request) {
      w.Write(b)
 }
 
+func initWebServer() {
+	http.HandleFunc("/gpios", gpios)
+    http.ListenAndServe(":8080", nil)
+}
+
 func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 3, "number of blinks")
@@ -142,8 +147,7 @@ func main() {
 	}
 	fmt.Println("Number of blinks:", *num)
 
-	http.HandleFunc("/gpios", gpios)
-    http.ListenAndServe(":8080", nil)
+	go initWebServer()
 
 	var err = initGPIO()
 	if err != nil {
