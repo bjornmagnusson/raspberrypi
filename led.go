@@ -118,8 +118,10 @@ type Gpio struct {
 
 func gpios(w http.ResponseWriter, r *http.Request) {
 	pins := ledMapEmbd
-	gpios := []Gpio{}
+	fmt.Printf("Fetching %d GPIOs\n", len(pins))
+	gpios := make([]Gpio, len(pins))
 	for i := 0; i < len(pins); i++ {
+		fmt.Println("GPIO", i)
 		pin := pins[i]
 		pinValue, _ := pin.Read()
 		gpio := Gpio{i, "GPIO" + strconv.Itoa(pin.N()), pinValue}

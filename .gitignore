@@ -90,3 +90,5 @@ ENV/
 
 vendor/
 *.exe
+led
+raspberrypi
