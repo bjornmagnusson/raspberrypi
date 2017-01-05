@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
 	"github.com/stianeikeland/go-rpio"
-	"net/http"
-	"os"
-	"strings"
-	"time"
 )
 
 var (
@@ -21,8 +23,8 @@ var (
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
-	ledMapEmbd = map[int]embd.DigitalPin{}
-	ledMap     = map[int]rpio.Pin{}
+	ledMapEmbd   = map[int]embd.DigitalPin{}
+	ledMap       = map[int]rpio.Pin{}
 
 	// Buttons
 	buttonPin = 22
@@ -37,9 +39,8 @@ func getToggledValue(pin embd.DigitalPin) int {
 	val, _ := pin.Read()
 	if val == embd.High {
 		return embd.Low
-	} else {
-		return embd.High
 	}
+	return embd.High
 }
 
 func toggleLEDEmbd(pin embd.DigitalPin, color string) {
@@ -56,7 +57,7 @@ func toggleLED(pin rpio.Pin, color string) {
 }
 
 func initButtons() {
-	buttonMap[0],_ = embd.NewDigitalPin(buttonPin)
+	buttonMap[0], _ = embd.NewDigitalPin(buttonPin)
 	buttonMap[0].SetDirection(embd.In)
 	buttonMap[0].ActiveLow(false)
 	quit := make(chan interface{})
@@ -72,9 +73,9 @@ func initButtons() {
 
 func initLEDs() {
 	if mode == 1 {
-		ledMapEmbd[0],_ = embd.NewDigitalPin(ledRedPin)
-		ledMapEmbd[1],_ = embd.NewDigitalPin(ledYellowPin)
-		ledMapEmbd[2],_ = embd.NewDigitalPin(ledGreenPin)
+		ledMapEmbd[0], _ = embd.NewDigitalPin(ledRedPin)
+		ledMapEmbd[1], _ = embd.NewDigitalPin(ledYellowPin)
+		ledMapEmbd[2], _ = embd.NewDigitalPin(ledGreenPin)
 		for i := 0; i < len(ledMapEmbd); i++ {
 			ledMapEmbd[i].SetDirection(embd.Out)
 			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
@@ -96,9 +97,8 @@ func initLEDs() {
 func initGPIO() error {
 	if mode == 1 {
 		return embd.InitGPIO()
-	} else {
-		return rpio.Open()
 	}
+	return rpio.Open()
 }
 
 func doLedToggling(i int) {
@@ -111,26 +111,32 @@ func doLedToggling(i int) {
 }
 
 type Gpio struct {
-	ID int
-	Name string
+	ID    int
+	Name  string
 	Value int
 }
 
-func gpios (w http.ResponseWriter, r *http.Request) {
+func gpios(w http.ResponseWriter, r *http.Request) {
+	pins := ledMapEmbd
+	gpios := []Gpio{}
+	for i := 0; i < len(pins); i++ {
+		pin := pins[i]
+		pinValue, _ := pin.Read()
+		gpio := Gpio{i, "GPIO" + strconv.Itoa(pin.N()), pinValue}
+		gpios[i] = gpio
+	}
+	json, err := json.Marshal(gpios)
 
-    m := Gpio{1, "GPIO2", 1}
-    b, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
 
-    if err != nil {
-        panic(err)
-    }
-
-     w.Write(b)
+	w.Write(json)
 }
 
 func initWebServer() {
 	http.HandleFunc("/gpios", gpios)
-    http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", nil)
 }
 
 func main() {
@@ -148,8 +154,8 @@ func main() {
 	}
 	fmt.Println("Number of blinks:", *num)
 
-	if *api {
-		go initWebServer()	
+	if *api && mode == 1 {
+		go initWebServer()
 	}
 
 	var err = initGPIO()
