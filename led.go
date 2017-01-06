@@ -12,6 +12,7 @@ import (
 
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
+	"github.com/rs/cors"
 	"github.com/stianeikeland/go-rpio"
 )
 
@@ -137,8 +138,10 @@ func gpios(w http.ResponseWriter, r *http.Request) {
 }
 
 func initWebServer() {
-	http.HandleFunc("/gpios", gpios)
-	http.ListenAndServe(":8080", nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gpios", gpios)
+	handler := cors.Default().Handler(mux)
+	http.ListenAndServe(":8080", handler)
 }
 
 func main() {
