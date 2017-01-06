@@ -139,7 +139,7 @@ func gpios(w http.ResponseWriter, r *http.Request) {
 
 func initWebServer() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/gpios", gpios)
+	mux.HandleFunc("/v1/gpios", gpios)
 	handler := cors.Default().Handler(mux)
 	http.ListenAndServe(":8080", handler)
 }
