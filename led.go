@@ -112,9 +112,9 @@ func doLedToggling(i int) {
 }
 
 type Gpio struct {
-	ID    int
-	Name  string
-	Value int
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Value int    `json:"value"`
 }
 
 func gpios(w http.ResponseWriter, r *http.Request) {
