@@ -1,5 +1,5 @@
 node(pi1) {
-    docker.image('hypriot/rpi-golang').inside {
+    docker.image('resin/rpi-raspbian').inside {
         checkout scm
 
         stage 'Commit'
