@@ -1,1 +1,17 @@
-language: go
+sudo: required
+services:
+- docker
+language: bash
+script:
+- docker run --rm --privileged multiarch/qemu-user-static:register --reset
+- docker build -t bjornmagnusson/piled .
+- docker run bjornmagnusson/piled
+- |
+  if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+    docker login -u="$DOCKER_USER" -p="$DOCKER_PASS"
+    docker push bjornmagnusson/piled
+  fi
+env:
+  global:
+  - secure: pp3NQvdxiWj6TSI6+FsOZ6uA3oTHge+rTiZpScUXnT6dLOgHRwRWeCeF9gLpoEPKM233GLur5XB82XrMu+UvLbLWO00j+Yo57cOqWk0812RKKBcO1UjMkBFRS/yGsOGg32eouKDaMwwJp60aDvULmb1zwUsZcXyjObaeWN9poNV2LJT3vnOZNQvU5YB5SJtdW1thHTc1O6woN7vkCPrVS+qC3rAu3UPDz2aQep0Rwa5Yjwf8bfcMOLvfCix88yb/+hozPdRllN+EizIJvcjibadOfq6KBFKRlihXSug9RKtKZjspa0sx/o+GQM9Lb7g7B9n+PkSoPzPe2I1G6jn0XWz4vhNRKZ48cdM9HMlqbnaxUACxpoQy+mGk21WvupdZ871a3mZk2xLms8o76OAWaBAOV7Md19VY1bZd2n+Kz6S1uPXdc4GlQUBlnF12YT+77dR3WnsilTV7yfLkPE8G4QkcReE9OC6SGqH5kJO3zucW8HFTCOicUGg9phX5FqB1VZKmt3LB4XHFQjasb8/PntwCKI7K6HrGoMJ1BUpfC2hO6YsyhFlPCXZr0VcaKkhPbCaMCWk/QIyE//t+y50a3gpYXOEMJXNWqnp/z1fMJptqpgjA9/fdwW/e63fiDzJgMqhZY1xMDpSpUcNiY/9OzcRQ0wIyrNiUhaU8rCtV2k0=
+  - secure: DW/YCCfQhCNqf6sA0OsAwsO2HddTaqyMkhiZC20fsAcfVCaCejvm4yCxKJZmUA7wFCnddcwH8G+6JjJc+9x3BtPURIjyWbxMFgV1OezkJg/oCSvLi2MAmmyp4si/mlODpjXUTw4UkZ3lIA/J9G0zEImkNs9ldo1+NXiKy5SLMFqI8jSQw8OiyFY/J8VsOBqefciY+0unU+WqTWoRMaBO9eA6OwJNzauabBwfMSzAPaXjcyEBgEo/UoOfAjTZePQ3s2FPopFeoBCMsiWH4vIl9jE+isbXhnatN1Mb/m/BG0NXMFjVLypMIx4FXC+4wScZdUZGpFB5LkrpVjMEIBYsTzqvkU0Dqu3yc1Ef3st5JtWBHVh+6T7B5aCjai/gZbPBmhVcYAqeZc/nesk/Euaks9C6kbtVeA9CZH5MG2HdvCWIiIU416zia5OVwM09gOzDKTskT6EYmPFeXl8BVG6I9aGC+llFDz2MPobOW+955nJhyxEM4ox9AsDn4UxOblI9PeeQ2ahtK3DyPN7JFu6fEE1nzQbuuoicJKyLKjPWAqd8ybmjJ/+N5j013O3m1H3fmsxH+nQeuH6TOLEMhvLYN4dsYtubNc3UU4CI+DX/qGtnqH0XOapCcxAJs5mNlofGJP3xK9TvI78gAuKUTVDPqpyh+msvzPe9VGlD7BNI8TI=
