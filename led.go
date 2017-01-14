@@ -17,7 +17,8 @@ import (
 )
 
 var (
-	mode = 0 // 0=go-rpio,1=embd
+	mode     = 0 // 0=go-rpio,1=embd
+	demoMode = false
 
 	// LEDs
 	ledRedPin    = 4
@@ -46,15 +47,19 @@ func getToggledValue(pin embd.DigitalPin) int {
 
 func toggleLEDEmbd(pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
-	toggledValue := getToggledValue(pin)
-	fmt.Println("Val to write", toggledValue)
-	embd.DigitalWrite(pin.N(), toggledValue)
+	if !demoMode {
+		toggledValue := getToggledValue(pin)
+		fmt.Println("Val to write", toggledValue)
+		embd.DigitalWrite(pin.N(), toggledValue)
+	}
 }
 
 func toggleLED(pin rpio.Pin, color string) {
 	fmt.Println(getLEDString(color))
-	fmt.Println("Current value:", pin.Read())
-	pin.Toggle()
+	if !demoMode {
+		fmt.Println("Current value:", pin.Read())
+		pin.Toggle()
+	}
 }
 
 func initButtons() {
@@ -90,6 +95,10 @@ func initLEDs() {
 			ledMap[i].Low()
 		}
 	}
+	initLEDcolors()
+}
+
+func initLEDcolors() {
 	ledToColor[0] = "red"
 	ledToColor[1] = "yellow"
 	ledToColor[2] = "green"
@@ -103,10 +112,14 @@ func initGPIO() error {
 }
 
 func doLedToggling(i int) {
-	if mode == 1 {
-		toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
+	if !demoMode {
+		if mode == 1 {
+			toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
+		} else {
+			toggleLED(ledMap[i%3], ledToColor[i%3])
+		}
 	} else {
-		toggleLED(ledMap[i%3], ledToColor[i%3])
+		fmt.Println(getLEDString(ledToColor[i%3]))
 	}
 	time.Sleep(time.Second)
 }
@@ -124,9 +137,15 @@ func gpios(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < len(pins); i++ {
 		fmt.Println("GPIO", i)
 		pin := pins[i]
-		pinValue, _ := pin.Read()
-		gpio := Gpio{i, "GPIO" + strconv.Itoa(pin.N()), pinValue}
-		gpios[i] = gpio
+		if demoMode {
+			pinValue := i % 2
+			gpio := Gpio{i, "GPIO" + strconv.Itoa(i), pinValue}
+			gpios[i] = gpio
+		} else {
+			pinValue, _ := pin.Read()
+			gpio := Gpio{i, "GPIO" + strconv.Itoa(pin.N()), pinValue}
+			gpios[i] = gpio
+		}
 	}
 	json, err := json.Marshal(gpios)
 
@@ -150,8 +169,15 @@ func main() {
 	modeFromCli := flag.Int("mode", 0, "mode")
 	button := flag.Bool("button", false, "button mode")
 	api := flag.Bool("api", true, "API enabled")
+	demo := flag.Bool("demo", false, "Demo mode enabled")
 	flag.Parse()
+
 	mode = *modeFromCli
+	demoMode = *demo
+
+	if demoMode {
+		fmt.Println("Running in demo mode, no physical hw interaction")
+	}
 	if mode == 1 {
 		fmt.Println("Running using Embd.io")
 	} else {
@@ -163,21 +189,25 @@ func main() {
 		go initWebServer()
 	}
 
-	var err = initGPIO()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	if !demoMode {
+		var err = initGPIO()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 
-	initLEDs()
-	if mode == 1 && *button {
-		initButtons()
-	}
+		initLEDs()
+		if mode == 1 && *button {
+			initButtons()
+		}
 
-	if mode == 1 {
-		defer embd.CloseGPIO()
+		if mode == 1 {
+			defer embd.CloseGPIO()
+		} else {
+			defer rpio.Close()
+		}
 	} else {
-		defer rpio.Close()
+		initLEDcolors()
 	}
 
 	if !*button {
