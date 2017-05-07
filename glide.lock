@@ -1,5 +1,5 @@
-hash: 05103a29c8450a4cdd37b5d84e19b1757b8315fd3f2eece2b81a21598877111e
-updated: 2017-05-07T17:46:57.8840526+02:00
+hash: 6f8c79d253df8c6943410a5db71c15f27053a3fee68cbdbd2fc4e366c4452f02
+updated: 2017-05-07T19:24:54.2287536+02:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -11,6 +11,10 @@ imports:
   - host/generic
   - host/rpi
   - util
+- name: github.com/kr/pretty
+  version: cfb55aafdaf3ec08f0db22699ab822c50091b1c4
+- name: github.com/kr/text
+  version: 7cafcd837844e784b526369c9bce262804aebc60
 - name: github.com/rs/cors
   version: a62a804a8a009876ca59105f7899938a1349f4b3
 - name: github.com/rs/xhandler
@@ -23,4 +27,28 @@ imports:
   - context
 - name: periph.io/x/periph
   version: d39d5a12cc04a628878e5bc646cd6ff6ca3bd7bd
+  subpackages:
+  - conn
+  - conn/gpio
+  - conn/gpio/gpioreg
+  - conn/i2c
+  - conn/i2c/i2creg
+  - conn/pin
+  - conn/pin/pinreg
+  - conn/spi
+  - conn/spi/spireg
+  - devices
+  - host
+  - host/allwinner
+  - host/bcm283x
+  - host/chip
+  - host/cpu
+  - host/distro
+  - host/fs
+  - host/odroidc1
+  - host/pine64
+  - host/pmem
+  - host/rpi
+  - host/sysfs
+  - host/videocore
 testImports: []
