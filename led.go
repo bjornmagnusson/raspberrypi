@@ -127,7 +127,8 @@ func initGPIO() error {
 	if mode == 1 {
 		return embd.InitGPIO()
 	} else if mode == 2 {
-		return host.Init()
+		_,err := host.Init()
+		return err
 	}
 	return rpio.Open()
 }
