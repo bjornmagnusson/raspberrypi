@@ -18,7 +18,7 @@ RUN go build -v led.go && \
     mv led /usr/local/bin && \
     chmod +x /usr/local/bin/led
 
-FROM resin/rpi-raspbian:jessie-20170111
+FROM scratch
 COPY --from=build /usr/local/bin/led .
 EXPOSE 8080
 ENTRYPOINT ["./led"]
