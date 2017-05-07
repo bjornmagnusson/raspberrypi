@@ -1,5 +1,5 @@
-hash: f5eee15e5bc25408fe58c3e3e04f7c73c577d85c8ac7004c4f0de102b74b329d
-updated: 2017-01-06T17:32:42.6439663+01:00
+hash: 05103a29c8450a4cdd37b5d84e19b1757b8315fd3f2eece2b81a21598877111e
+updated: 2017-05-07T17:46:57.8840526+02:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -18,7 +18,9 @@ imports:
 - name: github.com/stianeikeland/go-rpio
   version: 896db2ee1c7f95240dd6a09e56edf9cece107a34
 - name: golang.org/x/net
-  version: 905989bd20b7c354fd28a61074eed1c8f49ebc89
+  version: feeb485667d1fdabe727840fe00adc22431bc86e
   subpackages:
   - context
+- name: periph.io/x/periph
+  version: d39d5a12cc04a628878e5bc646cd6ff6ca3bd7bd
 testImports: []

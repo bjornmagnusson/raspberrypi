@@ -10,10 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stianeikeland/go-rpio"
 	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/all"
 	"github.com/rs/cors"
-	"github.com/stianeikeland/go-rpio"
+	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/gpio/gpioreg"
 )
 
 var (
@@ -27,6 +29,7 @@ var (
 	ledToColor   = map[int]string{}
 	ledMapEmbd   = map[int]embd.DigitalPin{}
 	ledMap       = map[int]rpio.Pin{}
+	ledMapPeriph = map[int]gpio.PinIO{}
 
 	// Buttons
 	buttonPin = 22
@@ -43,6 +46,14 @@ func getToggledValue(pin embd.DigitalPin) int {
 		return embd.Low
 	}
 	return embd.High
+}
+
+func toggleLEDPeriph(pin gpio.PinIO, color string) {
+	fmt.Println(getLEDString(color))
+	if !demoMode {
+		fmt.Println("Val to write", !pin.Read())
+		pin.Out(!pin.Read())
+	}
 }
 
 func toggleLEDEmbd(pin embd.DigitalPin, color string) {
@@ -86,6 +97,13 @@ func initLEDs() {
 			ledMapEmbd[i].SetDirection(embd.Out)
 			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
 		}
+	} else if mode == 2 {
+		ledMapPeriph[0] = gpioreg.ByNumber(ledRedPin)
+		ledMapPeriph[0] = gpioreg.ByNumber(ledYellowPin)
+		ledMapPeriph[0] = gpioreg.ByNumber(ledGreenPin)
+		for i := 0; i < len(ledMapPeriph); i++ {
+			ledMapPeriph[i].Out(gpio.Low)
+		}
 	} else {
 		ledMap[0] = rpio.Pin(ledRedPin)
 		ledMap[1] = rpio.Pin(ledYellowPin)
@@ -115,6 +133,8 @@ func doLedToggling(i int) {
 	if !demoMode {
 		if mode == 1 {
 			toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
+		} else if mode == 2{
+			toggleLEDPeriph(ledMapPeriph[i%3], ledToColor[i%3])
 		} else {
 			toggleLED(ledMap[i%3], ledToColor[i%3])
 		}
@@ -180,6 +200,8 @@ func main() {
 	}
 	if mode == 1 {
 		fmt.Println("Running using Embd.io")
+	} else if mode == 2 {
+		fmt.Println("Running using periph")
 	} else {
 		fmt.Println("Running using go-rpio")
 	}
