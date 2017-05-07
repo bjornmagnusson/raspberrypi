@@ -1,4 +1,4 @@
-FROM resin/rpi-raspbian:jessie-20170111
+FROM resin/rpi-raspbian:jessie-20170111 as build
 
 # Install Go
 ENV GOVERSION 1.7.3
@@ -26,6 +26,7 @@ RUN go build -v led.go && \
     chmod +x /usr/local/bin/led && \
     rm -rf /usr/local/go
 
+FROM resin/rpi-raspbian:jessie-20170111
+COPY --from=build /usr/local/bin/led .
 EXPOSE 8080
-
-CMD ["/usr/local/bin/led"]
+CMD ["./led"]
