@@ -29,4 +29,4 @@ RUN go build -v led.go && \
 FROM resin/rpi-raspbian:jessie-20170111
 COPY --from=build /usr/local/bin/led .
 EXPOSE 8080
-CMD ["./led"]
+ENTRYPOINT ["./led"]
