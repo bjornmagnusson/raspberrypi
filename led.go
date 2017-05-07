@@ -99,8 +99,8 @@ func initLEDs() {
 		}
 	} else if mode == 2 {
 		ledMapPeriph[0] = gpioreg.ByNumber(ledRedPin)
-		ledMapPeriph[0] = gpioreg.ByNumber(ledYellowPin)
-		ledMapPeriph[0] = gpioreg.ByNumber(ledGreenPin)
+		ledMapPeriph[1] = gpioreg.ByNumber(ledYellowPin)
+		ledMapPeriph[2] = gpioreg.ByNumber(ledGreenPin)
 		for i := 0; i < len(ledMapPeriph); i++ {
 			ledMapPeriph[i].Out(gpio.Low)
 		}
