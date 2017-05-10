@@ -16,7 +16,8 @@ WORKDIR $GOPATH/src/app
 COPY . $GOPATH/src/app
 RUN go build -v led.go && \
     mv led /usr/local/bin && \
-    chmod +x /usr/local/bin/led
+    chmod +x /usr/local/bin/led && \
+    go test
 
 FROM resin/rpi-raspbian:jessie-20170111
 COPY --from=build /usr/local/bin/led .
