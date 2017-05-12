@@ -7,3 +7,7 @@ services:
     command: -demo=true -api=true -num=0
     ports:
       - "8080:8080"
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == pi1
