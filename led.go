@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	mode     = 0 // 0=go-rpio,1=embd
+	mode     = 0 // 0=go-rpio,1=embd,2=periph
 	demoMode = false
 
 	// LEDs
@@ -156,9 +156,13 @@ type Gpio struct {
 
 func gpios(w http.ResponseWriter, r *http.Request) {
 	pins := ledMapEmbd
-	fmt.Printf("Fetching %d GPIOs\n", len(pins))
-	gpios := make([]Gpio, len(pins))
-	for i := 0; i < len(pins); i++ {
+	numPins := len(pins)
+	if demoMode {
+		numPins = 26
+	}
+	fmt.Printf("Fetching %d GPIOs\n", numPins)
+	gpios := make([]Gpio, numPins)
+	for i := 0; i < numPins; i++ {
 		fmt.Println("GPIO", i)
 		pin := pins[i]
 		if demoMode {
@@ -211,7 +215,7 @@ func main() {
 	}
 	fmt.Println("Number of blinks:", *num)
 
-	if *api && mode == 1 {
+	if *api {
 		go initWebServer()
 	}
 
