@@ -2,16 +2,18 @@ sudo: required
 services:
 - docker
 language: bash
-script:
-- docker version
-- docker run --rm --privileged multiarch/qemu-user-static:register --reset
-- docker build -t bjornmagnusson/pi-led .
-- docker run bjornmagnusson/pi-led -demo=true
-- |
-  if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
-    docker login -u="$DOCKER_USER" -p="$DOCKER_PASS"
-    docker push bjornmagnusson/pi-led
-  fi
+jobs:
+  include:
+    - stage: Build
+      script: docker build -t bjornmagnusson/pi-led .
+    - stage: Test
+      script: docker run bjornmagnusson/pi-led -demo=true
+    - stage: Publish
+      script: |
+        if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+          docker login -u="$DOCKER_USER" -p="$DOCKER_PASS"
+          docker push bjornmagnusson/pi-led
+        fi
 env:
   global:
   - secure: pp3NQvdxiWj6TSI6+FsOZ6uA3oTHge+rTiZpScUXnT6dLOgHRwRWeCeF9gLpoEPKM233GLur5XB82XrMu+UvLbLWO00j+Yo57cOqWk0812RKKBcO1UjMkBFRS/yGsOGg32eouKDaMwwJp60aDvULmb1zwUsZcXyjObaeWN9poNV2LJT3vnOZNQvU5YB5SJtdW1thHTc1O6woN7vkCPrVS+qC3rAu3UPDz2aQep0Rwa5Yjwf8bfcMOLvfCix88yb/+hozPdRllN+EizIJvcjibadOfq6KBFKRlihXSug9RKtKZjspa0sx/o+GQM9Lb7g7B9n+PkSoPzPe2I1G6jn0XWz4vhNRKZ48cdM9HMlqbnaxUACxpoQy+mGk21WvupdZ871a3mZk2xLms8o76OAWaBAOV7Md19VY1bZd2n+Kz6S1uPXdc4GlQUBlnF12YT+77dR3WnsilTV7yfLkPE8G4QkcReE9OC6SGqH5kJO3zucW8HFTCOicUGg9phX5FqB1VZKmt3LB4XHFQjasb8/PntwCKI7K6HrGoMJ1BUpfC2hO6YsyhFlPCXZr0VcaKkhPbCaMCWk/QIyE//t+y50a3gpYXOEMJXNWqnp/z1fMJptqpgjA9/fdwW/e63fiDzJgMqhZY1xMDpSpUcNiY/9OzcRQ0wIyrNiUhaU8rCtV2k0=
@@ -19,3 +21,4 @@ env:
 before_install:
 - sudo apt-get update
 - sudo apt-get -y -o Dpkg::Options::="--force-confnew" install docker-engine
+- docker run --rm --privileged multiarch/qemu-user-static:register --reset
