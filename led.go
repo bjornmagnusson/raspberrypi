@@ -38,6 +38,7 @@ var (
 
 	// GPIOs
 	gpios = map[int]Gpio{}
+	demoNum = 26
 )
 
 func getLEDString(color string) string {
@@ -155,15 +156,15 @@ func initGPIO() error {
 func doLedToggling(i int) {
 	if !demoMode {
 		if mode == 1 {
-			toggleLEDEmbd(i, ledMapEmbd[i%3], ledToColor[i%3])
+			toggleLEDEmbd(i%3, ledMapEmbd[i%3], ledToColor[i%3])
 		} else if mode == 2{
-			toggleLEDPeriph(i, ledMapPeriph[i%3], ledToColor[i%3])
+			toggleLEDPeriph(i%3, ledMapPeriph[i%3], ledToColor[i%3])
 		} else {
-			toggleLED(i, ledMap[i%3], ledToColor[i%3])
+			toggleLED(i%3, ledMap[i%3], ledToColor[i%3])
 		}
 	} else {
 		fmt.Println(getLEDString(ledToColor[i%3]))
-		setGpio(i, "GPIO" + strconv.Itoa(i), i % 2)
+		setGpio(i%demoNum, "GPIO" + strconv.Itoa(i%demoNum), i % 2)
 	}
 	time.Sleep(time.Second)
 }
@@ -175,16 +176,17 @@ type Gpio struct {
 }
 
 func getGpios(w http.ResponseWriter, r *http.Request) {
-	gpiosToJson := make([]Gpio, len(gpios))
+	gpiosToJson := make([]Gpio, 0, len(gpios))
+	fmt.Printf("Transforming %d GPIOs\n", len(gpios))
 	for  _, value := range gpios {
   	gpiosToJson = append(gpiosToJson, value)
 	}
+	fmt.Printf("Transformed into %d gpios\n", len(gpiosToJson))
 	json, err := json.Marshal(gpiosToJson)
 
 	if err != nil {
 		panic(err)
 	}
-
 	w.Write(json)
 }
 
