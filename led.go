@@ -35,6 +35,9 @@ var (
 	// Buttons
 	buttonPin = 22
 	buttonMap = map[int]embd.DigitalPin{}
+
+	// GPIOs
+	gpios = map[int]Gpio{}
 )
 
 func getLEDString(color string) string {
@@ -49,28 +52,44 @@ func getToggledValue(pin embd.DigitalPin) int {
 	return embd.High
 }
 
-func toggleLEDPeriph(pin gpio.PinIO, color string) {
+func setGpio(id int, name string, value int) {
+	gpios[id] = Gpio{id, name, value}
+}
+
+func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
 	fmt.Println(getLEDString(color))
 	if !demoMode {
 		fmt.Println("Val to write", !pin.Read())
 		pin.Out(!pin.Read())
+		value := 0
+		if pin.Read() == gpio.High {
+			value = 1
+		}
+		setGpio(id, pin.Name(), value)
 	}
 }
 
-func toggleLEDEmbd(pin embd.DigitalPin, color string) {
+func toggleLEDEmbd(id int, pin embd.DigitalPin, color string) {
 	fmt.Println(getLEDString(color))
 	if !demoMode {
 		toggledValue := getToggledValue(pin)
 		fmt.Println("Val to write", toggledValue)
 		embd.DigitalWrite(pin.N(), toggledValue)
+		value,_ := pin.Read()
+		setGpio(id, "GPIO" + strconv.Itoa(pin.N()), value)
 	}
 }
 
-func toggleLED(pin rpio.Pin, color string) {
+func toggleLED(id int, pin rpio.Pin, color string) {
 	fmt.Println(getLEDString(color))
 	if !demoMode {
 		fmt.Println("Current value:", pin.Read())
 		pin.Toggle()
+		value := 0
+		if pin.Read() == rpio.High {
+			value = 1
+		}
+		setGpio(id, "GPIO" + "N/A", value)
 	}
 }
 
@@ -136,14 +155,15 @@ func initGPIO() error {
 func doLedToggling(i int) {
 	if !demoMode {
 		if mode == 1 {
-			toggleLEDEmbd(ledMapEmbd[i%3], ledToColor[i%3])
+			toggleLEDEmbd(i, ledMapEmbd[i%3], ledToColor[i%3])
 		} else if mode == 2{
-			toggleLEDPeriph(ledMapPeriph[i%3], ledToColor[i%3])
+			toggleLEDPeriph(i, ledMapPeriph[i%3], ledToColor[i%3])
 		} else {
-			toggleLED(ledMap[i%3], ledToColor[i%3])
+			toggleLED(i, ledMap[i%3], ledToColor[i%3])
 		}
 	} else {
 		fmt.Println(getLEDString(ledToColor[i%3]))
+		setGpio(i, "GPIO" + strconv.Itoa(i), i % 2)
 	}
 	time.Sleep(time.Second)
 }
@@ -154,28 +174,12 @@ type Gpio struct {
 	Value int    `json:"value"`
 }
 
-func gpios(w http.ResponseWriter, r *http.Request) {
-	pins := ledMapEmbd
-	numPins := len(pins)
-	if demoMode {
-		numPins = 26
+func getGpios(w http.ResponseWriter, r *http.Request) {
+	gpiosToJson := make([]Gpio, len(gpios))
+	for  _, value := range gpios {
+  	gpiosToJson = append(gpiosToJson, value)
 	}
-	fmt.Printf("Fetching %d GPIOs\n", numPins)
-	gpios := make([]Gpio, numPins)
-	for i := 0; i < numPins; i++ {
-		fmt.Println("GPIO", i)
-		pin := pins[i]
-		if demoMode {
-			pinValue := i % 2
-			gpio := Gpio{i, "GPIO" + strconv.Itoa(i), pinValue}
-			gpios[i] = gpio
-		} else {
-			pinValue, _ := pin.Read()
-			gpio := Gpio{i, "GPIO" + strconv.Itoa(pin.N()), pinValue}
-			gpios[i] = gpio
-		}
-	}
-	json, err := json.Marshal(gpios)
+	json, err := json.Marshal(gpiosToJson)
 
 	if err != nil {
 		panic(err)
@@ -186,7 +190,7 @@ func gpios(w http.ResponseWriter, r *http.Request) {
 
 func initWebServer() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/gpios", gpios)
+	mux.HandleFunc("/v1/gpios", getGpios)
 	handler := cors.Default().Handler(mux)
 	http.ListenAndServe(":8080", handler)
 }
