@@ -18,4 +18,4 @@ env:
   - secure: DW/YCCfQhCNqf6sA0OsAwsO2HddTaqyMkhiZC20fsAcfVCaCejvm4yCxKJZmUA7wFCnddcwH8G+6JjJc+9x3BtPURIjyWbxMFgV1OezkJg/oCSvLi2MAmmyp4si/mlODpjXUTw4UkZ3lIA/J9G0zEImkNs9ldo1+NXiKy5SLMFqI8jSQw8OiyFY/J8VsOBqefciY+0unU+WqTWoRMaBO9eA6OwJNzauabBwfMSzAPaXjcyEBgEo/UoOfAjTZePQ3s2FPopFeoBCMsiWH4vIl9jE+isbXhnatN1Mb/m/BG0NXMFjVLypMIx4FXC+4wScZdUZGpFB5LkrpVjMEIBYsTzqvkU0Dqu3yc1Ef3st5JtWBHVh+6T7B5aCjai/gZbPBmhVcYAqeZc/nesk/Euaks9C6kbtVeA9CZH5MG2HdvCWIiIU416zia5OVwM09gOzDKTskT6EYmPFeXl8BVG6I9aGC+llFDz2MPobOW+955nJhyxEM4ox9AsDn4UxOblI9PeeQ2ahtK3DyPN7JFu6fEE1nzQbuuoicJKyLKjPWAqd8ybmjJ/+N5j013O3m1H3fmsxH+nQeuH6TOLEMhvLYN4dsYtubNc3UU4CI+DX/qGtnqH0XOapCcxAJs5mNlofGJP3xK9TvI78gAuKUTVDPqpyh+msvzPe9VGlD7BNI8TI=
 before_install:
 - sudo apt-get update
-- sudo apt-get -y -o Dpkg::Options::="--force-confnew" install docker-engine
+- sudo apt-get -y -o Dpkg::Options::="--force-confnew" install docker-ce
