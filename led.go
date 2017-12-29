@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	mode     = 0 // 0=go-rpio,1=embd,2=periph
+	mode     = 2 // 0=go-rpio,1=embd,2=periph
 	demoMode = false
 
 	// LEDs
