@@ -191,6 +191,7 @@ func getGpios(w http.ResponseWriter, r *http.Request) {
 }
 
 func initWebServer() {
+	fmt.Println("Initializing Webserver")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/gpios", getGpios)
 	handler := cors.Default().Handler(mux)
