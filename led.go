@@ -154,7 +154,7 @@ func initGPIO() error {
 	return rpio.Open()
 }
 
-func doLedToggling(i int) {
+func doLedToggling(i int, isSleepEnabled bool) {
 	if !demoMode {
 		if mode == 1 {
 			toggleLEDEmbd(i%3, ledMapEmbd[i%3], ledToColor[i%3])
@@ -167,7 +167,10 @@ func doLedToggling(i int) {
 		fmt.Println(getLEDString(ledToColor[i%3]))
 		setGpio(i%demoNum, "GPIO" + strconv.Itoa(i%demoNum), i % 2)
 	}
-	time.Sleep(time.Second)
+
+	if isSleepEnabled {
+		time.Sleep(time.Second)
+	}
 }
 
 type Gpio struct {
@@ -288,17 +291,17 @@ func main() {
 			var counter = 0
 			for {
 				if ledMode == 0 {
-					doLedToggling(counter)
+					doLedToggling(counter, true)
 				} else if ledMode == 1 {
-					doLedToggling(counter)
-					doLedToggling(counter + 1)
-					doLedToggling(counter + 2)
+					doLedToggling(counter, false)
+					doLedToggling(counter + 1, false)
+					doLedToggling(counter + 2, true)
 				}
 				counter++
 			}
 		} else {
 			for i := 0; i < *num; i++ {
-				doLedToggling(i)
+				doLedToggling(i, true)
 			}
 		}
 	}
