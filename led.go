@@ -31,6 +31,7 @@ var (
 	ledMapEmbd   = map[int]embd.DigitalPin{}
 	ledMap       = map[int]rpio.Pin{}
 	ledMapPeriph = map[int]gpio.PinIO{}
+	ledMode 		 = 0
 
 	// Buttons
 	buttonPin = 22
@@ -215,11 +216,20 @@ func modeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(json)
 }
 
+func ledModeHandler(w http.ResponseWriter, r *http.Request) {
+	if ledMode == 0 {
+		ledMode = 1
+	} else {
+		ledMode = 0
+	}
+}
+
 func initWebServer() {
 	fmt.Println("Initializing Webserver")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/gpios", getGpios)
 	mux.HandleFunc("/v1/mode", modeHandler)
+	mux.HandleFunc("/v1/ledMode", ledModeHandler)
 	handler := cors.Default().Handler(mux)
 	http.ListenAndServe(":8080", handler)
 }
@@ -277,7 +287,13 @@ func main() {
 		if *num == 0 {
 			var counter = 0
 			for {
-				doLedToggling(counter)
+				if ledMode == 0 {
+					doLedToggling(counter)
+				} else if ledMode == 1 {
+					doLedToggling(counter)
+					doLedToggling(counter + 1)
+					doLedToggling(counter + 2)
+				}
 				counter++
 			}
 		} else {
