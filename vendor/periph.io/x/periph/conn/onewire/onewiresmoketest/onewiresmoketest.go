@@ -11,6 +11,7 @@
 package onewiresmoketest
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -42,11 +43,14 @@ func (s *SmokeTest) Description() string {
 }
 
 // Run implements the SmokeTest interface.
-func (s *SmokeTest) Run(args []string) error {
-	f := flag.NewFlagSet("onewire", flag.ExitOnError)
+func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
 	busName := f.String("i2cbus", "", "I²C bus name for the DS2483 1-wire interface chip")
 	seed := f.Int64("seed", 0, "random number seed, default is to use the time")
 	f.Parse(args)
+	if f.NArg() != 0 {
+		f.Usage()
+		return errors.New("unrecognized arguments")
+	}
 
 	// Open the i2c bus where the DS2483 is located.
 	i2cBus, err := i2creg.Open(*busName)
@@ -157,7 +161,7 @@ func (s *SmokeTest) eeprom(bus onewire.Bus, addr onewire.Address) error {
 	}
 	for i := range data {
 		if data[i] != buf[i+3] {
-			return fmt.Errorf("eeprom: scratchpad data byte %d mismatch, expected %#x got %#x\n",
+			return fmt.Errorf("eeprom: scratchpad data byte %d mismatch, expected %#x got %#x",
 				i, data[i], buf[i+3])
 		}
 	}

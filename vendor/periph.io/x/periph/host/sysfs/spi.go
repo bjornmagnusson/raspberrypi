@@ -81,7 +81,10 @@ func newSPI(busNumber, chipSelect int) (*SPI, error) {
 func (s *SPI) Close() error {
 	s.Lock()
 	defer s.Unlock()
-	return s.f.Close()
+	if err := s.f.Close(); err != nil {
+		return fmt.Errorf("sysfs-spi: %v", err)
+	}
+	return nil
 }
 
 func (s *SPI) String() string {
@@ -99,10 +102,10 @@ func (s *SPI) LimitSpeed(maxHz int64) error {
 	return nil
 }
 
-// DevParams implements spi.Port.
+// Connect implements spi.Port.
 //
 // It must be called before any I/O.
-func (s *SPI) DevParams(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (s *SPI) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
 	if maxHz < 0 || maxHz >= 1<<32 {
 		return nil, fmt.Errorf("sysfs-spi: invalid speed %d", maxHz)
 	}
@@ -115,7 +118,7 @@ func (s *SPI) DevParams(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) 
 	s.Lock()
 	defer s.Unlock()
 	if s.initialized {
-		return nil, errors.New("sysfs-spi: DevParams() can only be called exactly once")
+		return nil, errors.New("sysfs-spi: Connect() can only be called exactly once")
 	}
 	s.initialized = true
 	s.maxHzDev = uint32(maxHz)
@@ -196,7 +199,7 @@ func (s *SPI) txInternal(w, r []byte) (int, error) {
 	s.Lock()
 	defer s.Unlock()
 	if !s.initialized {
-		return 0, errors.New("sysfs-spi: DevParams wasn't called")
+		return 0, errors.New("sysfs-spi: Connect wasn't called")
 	}
 	if len(w) != 0 && len(r) != 0 && s.halfDuplex {
 		return 0, errors.New("sysfs-spi: can only specify one of w or r when in half duplex")
@@ -248,7 +251,7 @@ func (s *SPI) txPackets(p []spi.Packet) error {
 	s.Lock()
 	defer s.Unlock()
 	if !s.initialized {
-		return errors.New("sysfs-spi: DevParams wasn't called")
+		return errors.New("sysfs-spi: Connect wasn't called")
 	}
 	// Convert the packets.
 	speed := s.maxHzPort
@@ -574,3 +577,5 @@ var _ io.Writer = &spiConn{}
 var _ spi.Conn = &spiConn{}
 var _ spi.Pins = &SPI{}
 var _ spi.Pins = &spiConn{}
+var _ fmt.Stringer = &SPI{}
+var _ fmt.Stringer = &spiConn{}

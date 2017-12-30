@@ -8,16 +8,14 @@ package ssd1306smoketest
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/gif"
 	"time"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/basicfont"
-	"golang.org/x/image/math/fixed"
 
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
@@ -53,10 +51,8 @@ func (s *SmokeTest) Description() string {
 }
 
 // Run implements the SmokeTest interface.
-func (s *SmokeTest) Run(args []string) (err error) {
+func (s *SmokeTest) Run(f *flag.FlagSet, args []string) (err error) {
 	s.delay = 2 * time.Second
-
-	f := flag.NewFlagSet("buses", flag.ExitOnError)
 	i2cID := f.String("i2c", "", "I²C bus to use")
 	spiID := f.String("spi", "", "SPI port to use")
 	dcName := f.String("dc", "", "DC pin to use in 4-wire SPI mode")
@@ -67,6 +63,10 @@ func (s *SmokeTest) Run(args []string) (err error) {
 
 	record := f.Bool("record", false, "record operation (for playback unit testing)")
 	f.Parse(args)
+	if f.NArg() != 0 {
+		f.Usage()
+		return errors.New("unrecognized arguments")
+	}
 
 	i2cBus, err2 := i2creg.Open(*i2cID)
 	if err2 != nil {
@@ -398,8 +398,9 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 
 	bmp := image1bit.NewVerticalLSB(i2cDev.Bounds())
 	copy(bmp.Pix, imgPattern)
-	drawText(bmp, "periph.io", 1)
-	drawText(bmp, "is awesome!", 0)
+	r := bmp.Bounds()
+	r.Min = r.Max.Sub(periphImg.Rect.Max)
+	draw.DrawMask(bmp, r, &image.Uniform{C: image1bit.On}, image.Point{}, &periphImg, image.Point{}, draw.Over)
 	for i, d := range s.devices {
 		start := time.Now()
 		d.Draw(d.Bounds(), bmp, image.Point{})
@@ -475,21 +476,58 @@ func round(d time.Duration) string {
 	return fmt.Sprintf("%3d.%03dms", ms, µs)
 }
 
-// drawText draws text at the bottom right of img.
-func drawText(img draw.Image, text string, lastToBottom int) {
-	f := basicfont.Face7x13
-	advance := font.MeasureString(f, text).Ceil()
-	bounds := img.Bounds()
-	if advance > bounds.Dx() {
-		advance = 0
-	} else {
-		advance = bounds.Dx() - advance
+// image1bit.Bit is not transparent, so it cannot be used with draw.DrawMask().
+type bit bool
+
+func (b bit) RGBA() (uint32, uint32, uint32, uint32) {
+	if b {
+		return 65535, 65535, 65535, 65535
 	}
-	drawer := font.Drawer{
-		Dst:  img,
-		Src:  &image.Uniform{image1bit.On},
-		Face: f,
-		Dot:  fixed.P(advance, bounds.Dy()-1-f.Descent-lastToBottom*f.Height),
-	}
-	drawer.DrawString(text)
+	return 0, 0, 0, 0
+}
+
+func convertBit(c color.Color) color.Color {
+	r, g, b, _ := c.RGBA()
+	return bit((r | g | b) >= 0x8000)
+}
+
+type alpha struct {
+	image1bit.VerticalLSB
+}
+
+func (a *alpha) ColorModel() color.Model {
+	return color.ModelFunc(convertBit)
+}
+
+func (a *alpha) At(x, y int) color.Color {
+	return convertBit(a.VerticalLSB.At(x, y))
+}
+
+// periphImg is the text "periph.io\nis awesome !" at the bottom right of a
+// 80x24 image encoded as .Pix.
+//
+// It is encoded here to not have to depend on golang.org/x/image/...
+var periphImg = alpha{
+	image1bit.VerticalLSB{
+		Pix: []byte{
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfc, 0x28, 0x44,
+			0x44, 0x44, 0x38, 0, 0x78, 0x94, 0x94, 0x94, 0x94, 0x58, 0, 0x4, 0xf8,
+			0x4, 0x4, 0x4, 0x8, 0, 0, 0x80, 0x84, 0xfd, 0x80, 0x80, 0, 0xfc, 0x28,
+			0x44, 0x44, 0x44, 0x38, 0, 0xff, 0x8, 0x4, 0x4, 0x4, 0xf8, 0, 0, 0, 0x80,
+			0xc0, 0x80, 0, 0, 0, 0x80, 0x84, 0xfd, 0x80, 0x80, 0, 0x78, 0x84, 0x84,
+			0x84, 0x84, 0x78, 0, 0, 0, 0, 0, 0, 0x80, 0xa0, 0, 0, 0, 0, 0x80, 0x80,
+			0x80, 0x80, 0, 0, 0x3, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0,
+			0, 0x80, 0, 0, 0, 0x80, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0x3, 0x80,
+			0x80, 0x80, 0x80, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0x80, 0x80,
+			0x1, 0x80, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0,
+			0, 0, 0, 0, 0x10, 0x10, 0x1f, 0x10, 0x10, 0, 0x9, 0x12, 0x12, 0x14, 0x14,
+			0x9, 0, 0, 0, 0, 0, 0, 0, 0, 0xc, 0x12, 0x12, 0x12, 0xa, 0x1f, 0, 0, 0xf,
+			0x10, 0xe, 0x10, 0xf, 0, 0xf, 0x12, 0x12, 0x12, 0x12, 0xb, 0, 0x9, 0x12,
+			0x12, 0x14, 0x14, 0x9, 0, 0xf, 0x10, 0x10, 0x10, 0x10, 0xf, 0, 0, 0x1f,
+			0, 0xf, 0, 0x1f, 0, 0xf, 0x12, 0x12, 0x12, 0x12, 0xb, 0, 0, 0, 0, 0x17,
+			0, 0, 0,
+		},
+		Stride: 80,
+		Rect:   image.Rectangle{Max: image.Point{80, 24}},
+	},
 }

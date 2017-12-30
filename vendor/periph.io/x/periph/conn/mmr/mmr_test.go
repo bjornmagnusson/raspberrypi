@@ -67,7 +67,7 @@ func ExampleDev8_WriteStruct() {
 		log.Fatal(err)
 	}
 	defer bus.Close()
-	c := &onewire.Dev{bus, 0xD0}
+	c := &onewire.Dev{Bus: bus, Addr: 0xD0}
 
 	dev := Dev8{c, binary.LittleEndian}
 	flags := struct {
@@ -83,6 +83,13 @@ func ExampleDev8_WriteStruct() {
 }
 
 //
+
+func TestDev8_String(t *testing.T) {
+	d := Dev8{Conn: &conntest.Discard{D: conn.Full}, Order: nil}
+	if s := d.String(); s != "discard" {
+		t.Fatal(s)
+	}
+}
 
 func TestDev8_ReadUint_Duplex(t *testing.T) {
 	d := Dev8{Conn: &conntest.Discard{D: conn.Full}, Order: nil}
@@ -322,6 +329,13 @@ func TestDev8_WriteStruct_uint16(t *testing.T) {
 }
 
 //
+
+func TestDev16_String(t *testing.T) {
+	d := Dev16{Conn: &conntest.Discard{D: conn.Full}, Order: nil}
+	if s := d.String(); s != "discard" {
+		t.Fatal(s)
+	}
+}
 
 func TestDev16_ReadUint_Duplex(t *testing.T) {
 	d := Dev16{Conn: &conntest.Discard{D: conn.Full}, Order: nil}

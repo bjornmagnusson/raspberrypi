@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/mmr"
 	"periph.io/x/periph/devices"
@@ -117,15 +118,15 @@ const (
 type FFCState uint8
 
 const (
-	// No FFC was requested.
+	// FFCNever means no FFC was requested.
 	FFCNever FFCState = 0
-	// FFC is in progress. It lasts 23 frames (at 27fps) so it lasts less than a second.
+	// FFCInProgress means a FFC is in progress. It lasts 23 frames (at 27fps) so it lasts less than a second.
 	FFCInProgress FFCState = 1
-	// FFC was completed successfully.
+	// FFCComplete means FFC was completed successfully.
 	FFCComplete FFCState = 2
 )
 
-// FFCMode
+// FFCMode describes the various self-calibration settings and state.
 type FFCMode struct {
 	FFCShutterMode          FFCShutterMode          // Default: FFCShutterModeExternal
 	ShutterTempLockoutState ShutterTempLockoutState // Default: ShutterTempLockoutStateInactive
@@ -150,14 +151,14 @@ type FFCMode struct {
 //
 // Maximum I²C speed is 1Mhz.
 type Dev struct {
-	c      conn
+	c      cciConn
 	serial uint64
 }
 
 // New returns a driver for the FLIR Lepton CCI protocol.
 func New(i i2c.Bus) (*Dev, error) {
 	d := &Dev{
-		c: conn{r: mmr.Dev16{Conn: &i2c.Dev{Bus: i, Addr: 0x2A}, Order: internal.Big16}},
+		c: cciConn{r: mmr.Dev16{Conn: &i2c.Dev{Bus: i, Addr: 0x2A}, Order: internal.Big16}},
 	}
 	// Wait for the device to be booted.
 	for {
@@ -170,6 +171,10 @@ func New(i i2c.Bus) (*Dev, error) {
 		// Polling rocks.
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+func (d *Dev) String() string {
+	return d.c.String()
 }
 
 // Init initializes the FLIR Lepton in raw 14 bits mode, enables telemetry as
@@ -309,17 +314,21 @@ func (d *Dev) RunFFC() error {
 
 //
 
-// conn is the low level connection.
+// cciConn is the low level connection.
 //
 // It implements the low level protocol to run the GET, SET and RUN commands
 // via memory mapped registers.
-type conn struct {
+type cciConn struct {
 	mu sync.Mutex
 	r  mmr.Dev16
 }
 
+func (c *cciConn) String() string {
+	return fmt.Sprintf("%s", &c.r)
+}
+
 // waitIdle waits for the busy bit to clear.
-func (c *conn) waitIdle() (StatusBit, error) {
+func (c *cciConn) waitIdle() (StatusBit, error) {
 	// Do not take the lock.
 	for {
 		if s, err := c.r.ReadUint16(regStatus); err != nil || StatusBit(s)&StatusBusy == 0 {
@@ -330,7 +339,7 @@ func (c *conn) waitIdle() (StatusBit, error) {
 }
 
 // get returns an attribute by querying the device.
-func (c *conn) get(cmd command, data interface{}) error {
+func (c *cciConn) get(cmd command, data interface{}) error {
 	if data == nil {
 		return errors.New("lepton-cci: get() argument must not be nil")
 	}
@@ -385,7 +394,7 @@ func (c *conn) get(cmd command, data interface{}) error {
 }
 
 // set returns an attribute on the device.
-func (c *conn) set(cmd command, data interface{}) error {
+func (c *cciConn) set(cmd command, data interface{}) error {
 	if data == nil {
 		return errors.New("lepton-cci: set() argument must not be nil")
 	}
@@ -429,7 +438,7 @@ func (c *conn) set(cmd command, data interface{}) error {
 }
 
 // run runs a command on the device that doesn't need any argument.
-func (c *conn) run(cmd command) error {
+func (c *cciConn) run(cmd command) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, err := c.waitIdle(); err != nil {
@@ -548,3 +557,7 @@ const (
 )
 
 // TODO(maruel): Enable RadXXX commands.
+
+var _ conn.Resource = &Dev{}
+var _ fmt.Stringer = &Dev{}
+var _ fmt.Stringer = &cciConn{}

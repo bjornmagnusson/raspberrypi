@@ -7,8 +7,11 @@
 package chipsmoketest
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
@@ -17,13 +20,46 @@ import (
 	"periph.io/x/periph/host/chip"
 )
 
-// testChipPresent verifies that CHIP and Allwinner are indeed detected.
-func testChipPresent() error {
+// SmokeTest is imported by periph-smoketest.
+type SmokeTest struct {
+}
+
+func (s *SmokeTest) String() string {
+	return s.Name()
+}
+
+// Name implements periph-smoketest.SmokeTest.
+func (s *SmokeTest) Name() string {
+	return "chip"
+}
+
+// Description implements periph-smoketest.SmokeTest.
+func (s *SmokeTest) Description() string {
+	return "Single CPU low cost board available at getchip.com"
+}
+
+// Run implements periph-smoketest.SmokeTest.
+func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
+	f.Parse(args)
+	if f.NArg() != 0 {
+		f.Usage()
+		return errors.New("unrecognized arguments")
+	}
 	if !chip.Present() {
-		return fmt.Errorf("did not detect presence of CHIP")
+		f.Usage()
+		return errors.New("this smoke test can only be run on a C.H.I.P. based host")
 	}
 	if !allwinner.Present() {
-		return fmt.Errorf("did not detect presence of Allwinner CPU")
+		f.Usage()
+		return errors.New("this smoke test can only be run on an allwinner based host")
+	}
+	tests := []func() error{
+		testChipHeaders, testChipGpioNumbers, testChipGpioNames, testChipAliases,
+	}
+	for _, t := range tests {
+		if err := t(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -77,7 +113,7 @@ func testChipHeaders() error {
 func testChipGpioNumbers() error {
 	must := map[int]string{34: "PB2", 108: "PD12", 139: "PE11", 1022: "GPIO1022"}
 	for number, name := range must {
-		pin := gpioreg.ByNumber(number)
+		pin := gpioreg.ByName(strconv.Itoa(number))
 		if pin == nil {
 			return fmt.Errorf("could not get gpio pin %d (should be %s)", number, name)
 		}
@@ -126,37 +162,6 @@ func testChipAliases() error {
 		if pr := pa.Real(); pr.Name() != r {
 			return fmt.Errorf("expected that alias %s have real pin %s but it's %s",
 				a, r, pr.Name())
-		}
-	}
-	return nil
-}
-
-// SmokeTest is imported by periph-smoketest.
-type SmokeTest struct {
-}
-
-func (s *SmokeTest) String() string {
-	return s.Name()
-}
-
-// Name implements periph-smoketest.SmokeTest.
-func (s *SmokeTest) Name() string {
-	return "chip"
-}
-
-// Description implements periph-smoketest.SmokeTest.
-func (s *SmokeTest) Description() string {
-	return "Single CPU low cost board available at getchip.com"
-}
-
-// Run implements periph-smoketest.SmokeTest.
-func (s *SmokeTest) Run(args []string) error {
-	tests := []func() error{
-		testChipPresent, testChipHeaders, testChipGpioNumbers, testChipGpioNames, testChipAliases,
-	}
-	for _, t := range tests {
-		if err := t(); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -236,7 +241,7 @@ func pinByName(name string) (gpio.PinIO, error) {
 
 // pinByNumber gets a *sysfs* pin by number and calls Fatal if it fails
 func pinByNumber(n int) (gpio.PinIO, error) {
-	p, err := sysfs.PinByNumber(n)
+	p := sysfs.Pins[n]
 	if p == nil {
 		return nil, fmt.Errorf("Failed to open sysfs(%d): %s", n, err)
 	}

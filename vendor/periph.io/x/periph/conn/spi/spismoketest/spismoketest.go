@@ -42,12 +42,15 @@ func (s *SmokeTest) Description() string {
 }
 
 // Run implements the SmokeTest interface.
-func (s *SmokeTest) Run(args []string) error {
-	f := flag.NewFlagSet("spi", flag.ExitOnError)
+func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
 	spiID := f.String("spi", "", "SPI port to use")
 	wp := f.String("wp", "", "gpio pin for EEPROM write-protect")
 	seed := f.Int64("seed", 0, "random number seed, default is to use the time")
 	f.Parse(args)
+	if f.NArg() != 0 {
+		f.Usage()
+		return errors.New("unrecognized arguments")
+	}
 
 	// Open the port.
 	spiDev, err := spireg.Open(*spiID)
@@ -57,7 +60,7 @@ func (s *SmokeTest) Run(args []string) error {
 	defer spiDev.Close()
 
 	// Set SPI parameters.
-	c, err := spiDev.DevParams(4000000, spi.Mode0, 8)
+	c, err := spiDev.Connect(4000000, spi.Mode0, 8)
 	if err != nil {
 		return fmt.Errorf("error setting SPI parameters: %v", err)
 	}

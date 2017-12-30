@@ -340,16 +340,16 @@ func TestDevEmpty(t *testing.T) {
 	}
 }
 
-func TestDevParamsFail(t *testing.T) {
+func TestConnectFail(t *testing.T) {
 	if d, err := New(&configFail{}, 150, 255, 6500); d != nil || err == nil {
-		t.Fatal("DevParams() call have failed")
+		t.Fatal("Connect() call have failed")
 	}
 }
 
 func TestDevLen(t *testing.T) {
 	buf := bytes.Buffer{}
 	d, _ := New(spitest.NewRecordRaw(&buf), 1, 255, 6500)
-	if n, err := d.Write([]byte{0}); n != 0 || err != errLength {
+	if n, err := d.Write([]byte{0}); n != 0 || err == nil {
 		t.Fatalf("%d %v", n, err)
 	}
 	if expected := []byte{}; !bytes.Equal(expected, buf.Bytes()) {
@@ -457,10 +457,10 @@ func TestDevLong(t *testing.T) {
 	}
 }
 
-func TestDevWriteShort(t *testing.T) {
+func TestDevWrite_Long(t *testing.T) {
 	buf := bytes.Buffer{}
 	d, _ := New(spitest.NewRecordRaw(&buf), 1, 250, 6500)
-	if n, err := d.Write([]byte{0, 0, 0, 1, 1, 1}); n != 3 || err != nil {
+	if n, err := d.Write([]byte{0, 0, 0, 1, 1, 1}); n != 0 || err == nil {
 		t.Fatal(n, err)
 	}
 }
@@ -703,7 +703,7 @@ type configFail struct {
 	spitest.Record
 }
 
-func (c *configFail) DevParams(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (c *configFail) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
 	return nil, errors.New("injected error")
 }
 

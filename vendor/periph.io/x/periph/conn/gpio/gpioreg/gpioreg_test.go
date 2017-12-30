@@ -49,14 +49,6 @@ func ExampleByName_number() {
 	fmt.Printf("%s: %s\n", p, p.Function())
 }
 
-func ExampleByNumber() {
-	p := ByNumber(6)
-	if p == nil {
-		log.Fatal("Failed to find #6")
-	}
-	fmt.Printf("%s: %s\n", p, p.Function())
-}
-
 func TestRegister(t *testing.T) {
 	defer reset()
 	// Low priority pin.
@@ -87,12 +79,6 @@ func TestRegister(t *testing.T) {
 	}
 	if a := Aliases(); len(a) != 0 {
 		t.Fatalf("Expected zero alias, got %v", a)
-	}
-	if ByNumber(0) == nil {
-		t.Fatal("failed to get pin #0")
-	}
-	if ByNumber(1) != nil {
-		t.Fatal("there is no get pin #1")
 	}
 	if ByName("a") == nil {
 		t.Fatal("failed to get pin 'a'")
@@ -126,8 +112,11 @@ func TestRegisterAlias(t *testing.T) {
 	if err := RegisterAlias("alias0", "GPIO0"); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterAlias("alias0", "GPIO0"); err == nil {
+	if err := RegisterAlias("alias0", "GPIO0"); err != nil {
 		t.Fatal(err)
+	}
+	if RegisterAlias("alias0", "GPIO1") == nil {
+		t.Fatal("can't register an alias to a different gpio")
 	}
 	if p := ByName("alias0"); p != nil {
 		t.Fatalf("unexpected alias0: %v", p)
@@ -168,8 +157,8 @@ func TestRegisterAlias(t *testing.T) {
 		t.Fatal("can't register a pin implementing RealPin")
 	}
 
-	if ByNumber(0) == nil {
-		t.Fatal("getByNumber for low priority pin")
+	if ByName("0") == nil {
+		t.Fatal("getByName for low priority pin")
 	}
 }
 

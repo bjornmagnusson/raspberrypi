@@ -85,7 +85,7 @@ func newI2C(busNumber int) (*I2C, error) {
 
 	// Query to know if 10 bits addresses are supported.
 	if err = i.f.Ioctl(ioctlFuncs, uintptr(unsafe.Pointer(&i.fn))); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sysfs-i2c: %v", err)
 	}
 	return i, nil
 }
@@ -95,7 +95,10 @@ func newI2C(busNumber int) (*I2C, error) {
 func (i *I2C) Close() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return i.f.Close()
+	if err := i.f.Close(); err != nil {
+		return fmt.Errorf("sysfs-i2c: %v", err)
+	}
+	return nil
 }
 
 func (i *I2C) String() string {
@@ -135,7 +138,10 @@ func (i *I2C) Tx(addr uint16, w, r []byte) error {
 	pp := uintptr(unsafe.Pointer(&p))
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return i.f.Ioctl(ioctlRdwr, pp)
+	if err := i.f.Ioctl(ioctlRdwr, pp); err != nil {
+		return fmt.Errorf("sysfs-i2c: %v", err)
+	}
+	return nil
 }
 
 // SetSpeed implements i2c.Bus.
@@ -152,18 +158,12 @@ func (i *I2C) SetSpeed(hz int64) error {
 }
 
 // SCL implements i2c.Pins.
-//
-// It will fail if host.Init() wasn't called. host.Init() is transparently
-// called by host.MakeI2C().
 func (i *I2C) SCL() gpio.PinIO {
 	i.initPins()
 	return i.scl
 }
 
 // SDA implements i2c.Pins.
-//
-// It will fail if host.Init() wasn't called. host.Init() is transparently
-// called by host.MakeI2C().
 func (i *I2C) SDA() gpio.PinIO {
 	i.initPins()
 	return i.sda
@@ -369,3 +369,4 @@ func init() {
 }
 
 var _ i2c.Bus = &I2C{}
+var _ fmt.Stringer = &I2C{}

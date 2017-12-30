@@ -84,7 +84,7 @@ type Dev struct {
 // New returns an initialized connection to the FLIR Lepton.
 //
 // The CS line is manually managed by using mode spi.NoCS when calling
-// DevParams(). In this case pass nil for the cs parameter. Some spidev drivers
+// Connect(). In this case pass nil for the cs parameter. Some spidev drivers
 // refuse spi.NoCS, they do not implement proper support to not trigger the CS
 // line so a manual CS (really, any GPIO pin) must be used instead.
 //
@@ -112,7 +112,7 @@ func New(p spi.Port, i i2c.Bus, cs gpio.PinOut) (*Dev, error) {
 	}
 	// TODO(maruel): Switch to 16 bits per word, so that big endian 16 bits word
 	// decoding is done by the SPI driver.
-	s, err := p.DevParams(20000000, mode, 8)
+	s, err := p.Connect(20000000, mode, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +142,16 @@ func New(p spi.Port, i i2c.Bus, cs gpio.PinOut) (*Dev, error) {
 		return nil, err
 	} else if status.CameraStatus != cci.SystemReady {
 		// The lepton takes < 1 second to boot so it should not happen normally.
-		return nil, fmt.Errorf("lepton: camera is not ready: %s", status)
+		return nil, fmt.Errorf("lepton: camera is not ready: %#v", status)
 	}
 	if err := d.Init(); err != nil {
 		return nil, err
 	}
 	return d, nil
+}
+
+func (d *Dev) String() string {
+	return fmt.Sprintf("Lepton(%s/%s/%s)", d.Dev, d.s, d.cs)
 }
 
 // ReadImg reads an image.
@@ -311,7 +315,7 @@ func (m *Metadata) parseTelemetry(data []byte) error {
 	m.FFCTemp = rowA.FPATempLastFFC.ToC()
 	m.FFCTempHousing = rowA.HousingTempLastFFC.ToC()
 	if rowA.StatusBits&statusMaskNil != 0 {
-		return fmt.Errorf("\n(Status: 0x%08X) & (Mask: 0x%08X) = (Extra: 0x%08X) in 0x%08X\n", rowA.StatusBits, statusMask, rowA.StatusBits&statusMaskNil, statusMaskNil)
+		return fmt.Errorf("lepton: (Status: 0x%08X) & (Mask: 0x%08X) = (Extra: 0x%08X) in 0x%08X", rowA.StatusBits, statusMask, rowA.StatusBits&statusMaskNil, statusMaskNil)
 	}
 	m.FFCDesired = rowA.StatusBits&statusFFCDesired != 0
 	m.Overtemp = rowA.StatusBits&statusOvertemp != 0
@@ -449,3 +453,6 @@ func verifyCRC(d []byte) bool {
 	tmp[3] = 0
 	return internal.CRC16(tmp) == internal.Big16.Uint16(d[2:])
 }
+
+var _ conn.Resource = &Dev{}
+var _ fmt.Stringer = &Dev{}

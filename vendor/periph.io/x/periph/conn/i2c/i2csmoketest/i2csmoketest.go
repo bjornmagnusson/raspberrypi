@@ -44,12 +44,15 @@ func (s *SmokeTest) Description() string {
 }
 
 // Run implements the SmokeTest interface.
-func (s *SmokeTest) Run(args []string) error {
-	f := flag.NewFlagSet("i2c", flag.ExitOnError)
+func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
 	i2cID := f.String("bus", "", "I²C bus to use")
 	wc := f.String("wc", "", "gpio pin for EEPROM write-control pin")
 	seed := f.Int64("seed", 0, "random number seed, default is to use the time")
 	f.Parse(args)
+	if f.NArg() != 0 {
+		f.Usage()
+		return errors.New("unrecognized arguments")
+	}
 
 	// Open the bus.
 	i2cBus, err := i2creg.Open(*i2cID)
@@ -104,7 +107,7 @@ func (s *SmokeTest) ds248x(bus i2c.Bus) error {
 		return fmt.Errorf("ds248x: error while reading status register: %s", err)
 	}
 	if stat[0] != 0x18 {
-		return fmt.Errorf("ds248x: invalid status register value: %#x, expected 0x18\n", stat[0])
+		return fmt.Errorf("ds248x: invalid status register value: %#x, expected 0x18", stat[0])
 	}
 
 	return nil
