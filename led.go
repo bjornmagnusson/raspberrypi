@@ -120,9 +120,9 @@ func initLEDs() {
 			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
 		}
 	} else if mode == 2 {
-		ledMapPeriph[0] = gpioreg.ByNumber(ledRedPin)
-		ledMapPeriph[1] = gpioreg.ByNumber(ledYellowPin)
-		ledMapPeriph[2] = gpioreg.ByNumber(ledGreenPin)
+		ledMapPeriph[0] = gpioreg.ByName(strconv.Itoa(ledRedPin))
+		ledMapPeriph[1] = gpioreg.ByName(strconv.Itoa(ledYellowPin))
+		ledMapPeriph[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
 		for i := 0; i < len(ledMapPeriph); i++ {
 			ledMapPeriph[i].Out(gpio.Low)
 		}

@@ -7,5 +7,5 @@ import:
 - package: github.com/rs/cors
   version: ^1.0.0
 - package: periph.io/x/periph
-  version: v1.0.0
+  version: v2.1.0
 - package: github.com/kr/pretty
