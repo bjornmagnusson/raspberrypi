@@ -210,7 +210,7 @@ func ToRGB(p []color.NRGBA) []byte {
 	return b
 }
 
-// Dev represents a strip of APA-102 LEDs as a strip connected over a SPI bus.
+// Dev represents a strip of APA-102 LEDs as a strip connected over a SPI port.
 // It accepts a stream of raw RGB pixels and converts it to the full dynamic
 // range as supported by APA102 protocol (nearly 8000:1 contrast ratio).
 //
@@ -284,7 +284,7 @@ func (d *Dev) Halt() error {
 
 // New returns a strip that communicates over SPI to APA102 LEDs.
 //
-// The SPI bus speed should be high, at least in the Mhz range, as
+// The SPI port speed should be high, at least in the Mhz range, as
 // there's 32 bits sent per LED, creating a staggered effect. See
 // https://cpldcpu.wordpress.com/2014/11/30/understanding-the-apa102-superled/
 //
@@ -293,8 +293,9 @@ func (d *Dev) Halt() error {
 // As per APA102-C spec, the chip's max refresh rate is 400hz.
 // https://en.wikipedia.org/wiki/Flicker_fusion_threshold is a recommended
 // reading.
-func New(s spi.Conn, numLights int, intensity uint8, temperature uint16) (*Dev, error) {
-	if err := s.DevParams(20000000, spi.Mode3, 8); err != nil {
+func New(p spi.Port, numLights int, intensity uint8, temperature uint16) (*Dev, error) {
+	c, err := p.DevParams(20000000, spi.Mode3, 8)
+	if err != nil {
 		return nil, err
 	}
 	// End frames are needed to be able to push enough SPI clock signals due to
@@ -308,7 +309,7 @@ func New(s spi.Conn, numLights int, intensity uint8, temperature uint16) (*Dev, 
 	return &Dev{
 		Intensity:   intensity,
 		Temperature: temperature,
-		s:           s,
+		s:           c,
 		numLights:   numLights,
 		rawBuf:      buf,
 		pixels:      buf[4 : 4+4*numLights],

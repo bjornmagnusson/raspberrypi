@@ -1,5 +1,5 @@
-hash: 6f8c79d253df8c6943410a5db71c15f27053a3fee68cbdbd2fc4e366c4452f02
-updated: 2017-05-21T13:30:37.127475091+02:00
+hash: 9997a6ad4d748fe549ee4c43af155fe9a09cacbe3e655bf4c2a875e5d861a066
+updated: 2017-12-30T19:27:21.418419+01:00
 imports:
 - name: cloud.google.com/go
   version: 26cb9947316ae45307e333fdd0c6e8f192274096
@@ -60,9 +60,7 @@ imports:
 - name: github.com/oxtoacart/bpool
   version: 4e1c5567d7c2dd59fa4c7c83d34c2f3528b025d6
 - name: github.com/rs/cors
-  version: a62a804a8a009876ca59105f7899938a1349f4b3
-- name: github.com/rs/xhandler
-  version: ed27b6fd65218132ee50cd95f38474a3d8a2cd12
+  version: 7af7a1e09ba336d2ea14b1ce73bf693c6837dbf6
 - name: github.com/stianeikeland/go-rpio
   version: 896db2ee1c7f95240dd6a09e56edf9cece107a34
 - name: github.com/zenazn/goji
@@ -163,7 +161,7 @@ imports:
   - internal/urlfetch
   - urlfetch
 - name: periph.io/x/periph
-  version: d39d5a12cc04a628878e5bc646cd6ff6ca3bd7bd
+  version: 2d212de54aa9510afd901f8faafd8c665e3d441f
   subpackages:
   - conn
   - conn/conntest

@@ -2,7 +2,7 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// spi-io writes to an SPI bus data from stdin and outputs to stdout or writes
+// spi-io writes to an SPI port data from stdin and outputs to stdout or writes
 // arguments and outputs hex encoded output.
 //
 // Usage:
@@ -87,8 +87,8 @@ func runTx(s spi.Conn, args []string) error {
 }
 
 func mainImpl() error {
-	busName := flag.String("b", "", "SPI bus to use")
-	hz := flag.Int("hz", 1000000, "SPI bus speed")
+	spiID := flag.String("b", "", "SPI port to use")
+	hz := flag.Int("hz", 1000000, "SPI port speed")
 
 	nocs := flag.Bool("nocs", false, "do not assert the CS line")
 	half := flag.Bool("half", false, "half duplex mode, sharing MOSI and MISO")
@@ -122,20 +122,21 @@ func mainImpl() error {
 	if _, err := host.Init(); err != nil {
 		return err
 	}
-	bus, err := spireg.Open(*busName)
+	s, err := spireg.Open(*spiID)
 	if err != nil {
 		return err
 	}
-	defer bus.Close()
-	if err = bus.DevParams(int64(*hz), m, *bits); err != nil {
+	defer s.Close()
+	c, err := s.DevParams(int64(*hz), m, *bits)
+	if err != nil {
 		return err
 	}
 	if *verbose {
-		if p, ok := bus.(spi.Pins); ok {
+		if p, ok := c.(spi.Pins); ok {
 			log.Printf("Using pins CLK: %s  MOSI: %s  MISO:  %s", p.CLK(), p.MOSI(), p.MISO())
 		}
 	}
-	return runTx(bus, flag.Args())
+	return runTx(c, flag.Args())
 }
 
 func main() {

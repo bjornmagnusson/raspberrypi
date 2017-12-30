@@ -122,7 +122,7 @@ type Dev struct {
 // The RES (reset) pin can be used outside of this driver but is not supported
 // natively. In case of external reset via the RES pin, this device drive must
 // be reinstantiated.
-func NewSPI(s spi.Conn, dc gpio.PinOut, w, h int, rotated bool) (*Dev, error) {
+func NewSPI(p spi.Port, dc gpio.PinOut, w, h int, rotated bool) (*Dev, error) {
 	if dc == gpio.INVALID {
 		return nil, errors.New("ssd1306: use nil for dc to use 3-wire mode, do not use gpio.INVALID")
 	}
@@ -133,10 +133,11 @@ func NewSPI(s spi.Conn, dc gpio.PinOut, w, h int, rotated bool) (*Dev, error) {
 	} else if err := dc.Out(gpio.Low); err != nil {
 		return nil, err
 	}
-	if err := s.DevParams(3300000, spi.Mode0, bits); err != nil {
+	c, err := p.DevParams(3300000, spi.Mode0, bits)
+	if err != nil {
 		return nil, err
 	}
-	return newDev(s, w, h, rotated, true, dc)
+	return newDev(c, w, h, rotated, true, dc)
 }
 
 // NewI2C returns a Dev object that communicates over I²C to a SSD1306 display
@@ -148,8 +149,8 @@ func NewI2C(i i2c.Bus, w, h int, rotated bool) (*Dev, error) {
 	return newDev(&i2c.Dev{Bus: i, Addr: 0x3C}, w, h, rotated, false, nil)
 }
 
-// newDev is the common initialization code that is independent of the bus
-// being used.
+// newDev is the common initialization code that is independent of the
+// communication protocol (I²C or SPI) being used.
 func newDev(c conn.Conn, w, h int, rotated, usingSPI bool, dc gpio.PinOut) (*Dev, error) {
 	if w < 8 || w > 128 || w&7 != 0 {
 		return nil, fmt.Errorf("ssd1306: invalid width %d", w)
