@@ -123,29 +123,6 @@ func getGpios(w http.ResponseWriter, r *http.Request) {
 	w.Write(json)
 }
 
-type Mode struct {
-	Name  string `json:"name"`
-	Value int    `json:"value"`
-}
-
-func modeHandler(w http.ResponseWriter, r *http.Request) {
-	modeName := ""
-
-	switch mode {
-	case 0:
-		modeName = "go-rpio"
-	default:
-		modeName = "periph"
-	}
-	modeToJson := Mode{modeName,mode}
-	json, err := json.Marshal(modeToJson)
-
-	if err != nil {
-		panic(err)
-	}
-	w.Write(json)
-}
-
 type PushoverMessage struct {
 	Token string `json:"token"`
 	User string `json:"user"`
@@ -187,7 +164,6 @@ func initWebServer() {
 	fmt.Println("Initializing Webserver")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/gpios", getGpios)
-	mux.HandleFunc("/v1/mode", modeHandler)
 	mux.HandleFunc("/v1/ledMode", ledModeHandler)
 	handler := cors.Default().Handler(mux)
 	http.ListenAndServe(":8080", handler)
@@ -195,8 +171,7 @@ func initWebServer() {
 
 func main() {
 	fmt.Println("Parsing parameters")
-	num := flag.Int("num", 3, "number of blinks")
-	modeFromCli := flag.Int("mode", 2, "mode")
+	num := flag.Int("num", 0, "number of blinks")
 	button := flag.Bool("button", false, "button mode")
 	api := flag.Bool("api", true, "API enabled")
 	demo := flag.Bool("demo", false, "Demo mode enabled")
@@ -204,7 +179,6 @@ func main() {
 
 	flag.Parse()
 
-	mode = *modeFromCli
 	demoMode = *demo
 	isPushoverEnabled = *pushoverFromCli
 
