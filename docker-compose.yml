@@ -1,13 +1,18 @@
 version: '3'
+
 services:
   api:
     image: bjornmagnusson/pi-led
     build:
       context: .
-    command: -demo=true -api=true -num=0
+    command: -demo=false -api=true -num=0
     ports:
       - "8080:8080"
+    environment:
+     - "PUSHOVER_TOKEN=$PUSHOVER_TOKEN"
+     - "PUSHOVER_USER=$PUSHOVER_USER"
     deploy:
       placement:
         constraints:
           - node.hostname == pi1
+    privileged: true
