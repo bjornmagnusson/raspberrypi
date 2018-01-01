@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -40,6 +41,11 @@ var (
 	// GPIOs
 	gpios = map[int]Gpio{}
 	demoNum = 26
+
+	// PUSHOVER_USER
+	pushoverUser = ""
+	pushoverToken = ""
+	pushoverApi = "https://api.pushover.net:443/1/messages.json"
 )
 
 func getLEDString(color string) string {
@@ -219,12 +225,39 @@ func modeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(json)
 }
 
+type PushoverMessage struct {
+	Token string `json:"token"`
+	User string `json:"user"`
+	Message string `json:"message"`
+}
+
 func ledModeHandler(w http.ResponseWriter, r *http.Request) {
 	if ledMode == 0 {
 		ledMode = 1
 	} else {
 		ledMode = 0
 	}
+
+	message := PushoverMessage{pushoverToken, pushoverUser, "LED mode toggled"}
+	json, err := json.Marshal(message)
+	var jsonStr = []byte(json)
+
+	// Build the request
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", pushoverApi, bytes.NewBuffer(jsonStr))
+	if err != nil {
+		fmt.Println("Request ERROR:", err)
+		return
+	}
+
+  req.Header.Add("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("Response ERROR:", err)
+		return
+	}
+	defer resp.Body.Close()
+	fmt.Println("Response: ", *resp)
 }
 
 func initWebServer() {
@@ -248,6 +281,9 @@ func main() {
 
 	mode = *modeFromCli
 	demoMode = *demo
+
+	pushoverUser = os.Getenv("PUSHOVER_USER")
+	pushoverToken = os.Getenv("PUSHOVER_TOKEN")
 
 	if demoMode {
 		fmt.Println("Running in demo mode, no physical hw interaction")
