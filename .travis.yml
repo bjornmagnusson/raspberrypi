@@ -10,7 +10,7 @@ script:
 - |
   if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
     docker login -u="$DOCKER_USER" -p="$DOCKER_PASS"
-    docker push bjornmagnusson/pi-led
+    docker-compose push
   fi
 env:
   global:
