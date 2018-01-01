@@ -20,8 +20,8 @@ RUN go build -v led.go && \
     go test
 
 FROM resin/rpi-raspbian:jessie-20170111
-ENV PUSHOVER_TOKEN, ""
-ENV PUSHOVER_USER, ""
+ENV PUSHOVER_TOKEN ""
+ENV PUSHOVER_USER ""
 COPY --from=build /usr/local/bin/led .
 EXPOSE 8080
 ENTRYPOINT ["./led"]

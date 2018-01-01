@@ -288,12 +288,11 @@ func main() {
 	if demoMode {
 		fmt.Println("Running in demo mode, no physical hw interaction")
 	}
-	if mode == 1 {
-		fmt.Println("Running using Embd.io")
-	} else if mode == 2 {
+	if mode == 2 {
 		fmt.Println("Running using periph")
 	} else {
-		fmt.Println("Running using go-rpio")
+		fmt.Println("Running using periph")
+		mode = 2
 	}
 	fmt.Println("Number of blinks:", *num)
 
