@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stianeikeland/go-rpio"
-	"github.com/rs/cors"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/host"
+	"github.com/rs/cors"
 )
 
 var (
@@ -28,7 +27,6 @@ var (
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
-	ledMap       = map[int]rpio.Pin{}
 	ledMapPeriph = map[int]gpio.PinIO{}
 	ledMode 		 = 0
 
@@ -66,19 +64,6 @@ func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
 	}
 }
 
-func toggleLED(id int, pin rpio.Pin, color string) {
-	fmt.Println(getLEDString(color))
-	if !demoMode {
-		fmt.Println("Current value:", pin.Read())
-		pin.Toggle()
-		value := 0
-		if pin.Read() == rpio.High {
-			value = 1
-		}
-		setGpio(id, "GPIO" + "N/A", value)
-	}
-}
-
 func initLEDs() {
 	if mode == 2 {
 		ledMapPeriph[0] = gpioreg.ByName(strconv.Itoa(ledRedPin))
@@ -86,14 +71,6 @@ func initLEDs() {
 		ledMapPeriph[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
 		for i := 0; i < len(ledMapPeriph); i++ {
 			ledMapPeriph[i].Out(gpio.Low)
-		}
-	} else {
-		ledMap[0] = rpio.Pin(ledRedPin)
-		ledMap[1] = rpio.Pin(ledYellowPin)
-		ledMap[2] = rpio.Pin(ledGreenPin)
-		for i := 0; i < len(ledMap); i++ {
-			ledMap[i].Output()
-			ledMap[i].Low()
 		}
 	}
 	initLEDcolors()
@@ -106,19 +83,14 @@ func initLEDcolors() {
 }
 
 func initGPIO() error {
-	if mode == 2 {
-		_,err := host.Init()
-		return err
-	}
-	return rpio.Open()
+	_,err := host.Init()
+	return err
 }
 
 func doLedToggling(i int, isSleepEnabled bool) {
 	if !demoMode {
 	  if mode == 2{
 			toggleLEDPeriph(i%3, ledMapPeriph[i%3], ledToColor[i%3])
-		} else {
-			toggleLED(i%3, ledMap[i%3], ledToColor[i%3])
 		}
 	} else {
 		fmt.Println(getLEDString(ledToColor[i%3]))
@@ -260,10 +232,7 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-
 		initLEDs()
-
-		defer rpio.Close()
 	} else {
 		initLEDcolors()
 	}

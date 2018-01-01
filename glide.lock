@@ -1,14 +1,8 @@
-hash: 8cf1d01a5e0c87e2469ba4756b714f3d0f41a6e1e0147f9a8b939de93dbddce8
-updated: 2018-01-01T22:43:18.529682+01:00
+hash: 9c5288ca85461a5152d66087318cf8aaf7a45b6295736cded5f470ff10937519
+updated: 2018-01-01T22:54:11.456274+01:00
 imports:
-- name: github.com/golang/glog
-  version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
-- name: github.com/kr/pretty
-  version: cfb55aafdaf3ec08f0db22699ab822c50091b1c4
 - name: github.com/rs/cors
   version: 7af7a1e09ba336d2ea14b1ce73bf693c6837dbf6
-- name: github.com/stianeikeland/go-rpio
-  version: 896db2ee1c7f95240dd6a09e56edf9cece107a34
 - name: periph.io/x/periph
   version: bdb4e4c4979bc79ee8c99e6432bd16519d7902a1
   subpackages:
