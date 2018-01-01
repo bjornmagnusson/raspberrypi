@@ -1,16 +1,8 @@
-hash: 6f2178f288ab53a28b44820c2b89025d31d9756ec875eb9068d9711804dcbf58
-updated: 2017-12-30T20:03:50.981289+01:00
+hash: 8cf1d01a5e0c87e2469ba4756b714f3d0f41a6e1e0147f9a8b939de93dbddce8
+updated: 2018-01-01T22:43:18.529682+01:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
-- name: github.com/kidoman/embd
-  version: d3d8c0c5c68dc6caccebb7d720f36e64bafd0a62
-  subpackages:
-  - host/all
-  - host/bbb
-  - host/generic
-  - host/rpi
-  - util
 - name: github.com/kr/pretty
   version: cfb55aafdaf3ec08f0db22699ab822c50091b1c4
 - name: github.com/rs/cors

@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/stianeikeland/go-rpio"
-	"github.com/kidoman/embd"
-	_ "github.com/kidoman/embd/host/all"
 	"github.com/rs/cors"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
@@ -21,22 +19,21 @@ import (
 )
 
 var (
-	mode     = 2 // 0=go-rpio,1=embd,2=periph
+	mode     = 2 // 0=go-rpio,2=periph
 	demoMode = false
+	isPushoverEnabled = false
 
 	// LEDs
 	ledRedPin    = 4
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
-	ledMapEmbd   = map[int]embd.DigitalPin{}
 	ledMap       = map[int]rpio.Pin{}
 	ledMapPeriph = map[int]gpio.PinIO{}
 	ledMode 		 = 0
 
 	// Buttons
 	buttonPin = 22
-	buttonMap = map[int]embd.DigitalPin{}
 
 	// GPIOs
 	gpios = map[int]Gpio{}
@@ -50,14 +47,6 @@ var (
 
 func getLEDString(color string) string {
 	return "Toggle " + strings.ToUpper(color)
-}
-
-func getToggledValue(pin embd.DigitalPin) int {
-	val, _ := pin.Read()
-	if val == embd.High {
-		return embd.Low
-	}
-	return embd.High
 }
 
 func setGpio(id int, name string, value int) {
@@ -77,17 +66,6 @@ func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
 	}
 }
 
-func toggleLEDEmbd(id int, pin embd.DigitalPin, color string) {
-	fmt.Println(getLEDString(color))
-	if !demoMode {
-		toggledValue := getToggledValue(pin)
-		fmt.Println("Val to write", toggledValue)
-		embd.DigitalWrite(pin.N(), toggledValue)
-		value,_ := pin.Read()
-		setGpio(id, "GPIO" + strconv.Itoa(pin.N()), value)
-	}
-}
-
 func toggleLED(id int, pin rpio.Pin, color string) {
 	fmt.Println(getLEDString(color))
 	if !demoMode {
@@ -101,31 +79,8 @@ func toggleLED(id int, pin rpio.Pin, color string) {
 	}
 }
 
-func initButtons() {
-	buttonMap[0], _ = embd.NewDigitalPin(buttonPin)
-	buttonMap[0].SetDirection(embd.In)
-	buttonMap[0].ActiveLow(false)
-	quit := make(chan interface{})
-	err := buttonMap[0].Watch(embd.EdgeFalling, func(btn embd.DigitalPin) {
-		fmt.Println("Pressed", btn)
-		quit <- btn
-	})
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("Button %v was pressed.\n", <-quit)
-}
-
 func initLEDs() {
-	if mode == 1 {
-		ledMapEmbd[0], _ = embd.NewDigitalPin(ledRedPin)
-		ledMapEmbd[1], _ = embd.NewDigitalPin(ledYellowPin)
-		ledMapEmbd[2], _ = embd.NewDigitalPin(ledGreenPin)
-		for i := 0; i < len(ledMapEmbd); i++ {
-			ledMapEmbd[i].SetDirection(embd.Out)
-			embd.DigitalWrite(ledMapEmbd[i].N(), embd.Low)
-		}
-	} else if mode == 2 {
+	if mode == 2 {
 		ledMapPeriph[0] = gpioreg.ByName(strconv.Itoa(ledRedPin))
 		ledMapPeriph[1] = gpioreg.ByName(strconv.Itoa(ledYellowPin))
 		ledMapPeriph[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
@@ -151,9 +106,7 @@ func initLEDcolors() {
 }
 
 func initGPIO() error {
-	if mode == 1 {
-		return embd.InitGPIO()
-	} else if mode == 2 {
+	if mode == 2 {
 		_,err := host.Init()
 		return err
 	}
@@ -162,9 +115,7 @@ func initGPIO() error {
 
 func doLedToggling(i int, isSleepEnabled bool) {
 	if !demoMode {
-		if mode == 1 {
-			toggleLEDEmbd(i%3, ledMapEmbd[i%3], ledToColor[i%3])
-		} else if mode == 2{
+	  if mode == 2{
 			toggleLEDPeriph(i%3, ledMapPeriph[i%3], ledToColor[i%3])
 		} else {
 			toggleLED(i%3, ledMap[i%3], ledToColor[i%3])
@@ -211,8 +162,6 @@ func modeHandler(w http.ResponseWriter, r *http.Request) {
 	switch mode {
 	case 0:
 		modeName = "go-rpio"
-	case 1:
-		modeName = "embd"
 	default:
 		modeName = "periph"
 	}
@@ -238,26 +187,28 @@ func ledModeHandler(w http.ResponseWriter, r *http.Request) {
 		ledMode = 0
 	}
 
-	message := PushoverMessage{pushoverToken, pushoverUser, "LED mode toggled"}
-	json, err := json.Marshal(message)
-	var jsonStr = []byte(json)
+	if isPushoverEnabled {
+		message := PushoverMessage{pushoverToken, pushoverUser, "LED mode toggled"}
+		json, err := json.Marshal(message)
+		var jsonStr = []byte(json)
 
-	// Build the request
-	client := &http.Client{}
-	req, err := http.NewRequest("POST", pushoverApi, bytes.NewBuffer(jsonStr))
-	if err != nil {
-		fmt.Println("Request ERROR:", err)
-		return
-	}
+		// Build the request
+		client := &http.Client{}
+		req, err := http.NewRequest("POST", pushoverApi, bytes.NewBuffer(jsonStr))
+		if err != nil {
+			fmt.Println("Request ERROR:", err)
+			return
+		}
 
-  req.Header.Add("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Response ERROR:", err)
-		return
+	  req.Header.Add("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Println("Response ERROR:", err)
+			return
+		}
+		defer resp.Body.Close()
+		fmt.Println("Response: ", *resp)
 	}
-	defer resp.Body.Close()
-	fmt.Println("Response: ", *resp)
 }
 
 func initWebServer() {
@@ -277,10 +228,13 @@ func main() {
 	button := flag.Bool("button", false, "button mode")
 	api := flag.Bool("api", true, "API enabled")
 	demo := flag.Bool("demo", false, "Demo mode enabled")
+	pushoverFromCli := flag.Bool("pushover", false, "Pushover notifications enabled")
+
 	flag.Parse()
 
 	mode = *modeFromCli
 	demoMode = *demo
+	isPushoverEnabled = *pushoverFromCli
 
 	pushoverUser = os.Getenv("PUSHOVER_USER")
 	pushoverToken = os.Getenv("PUSHOVER_TOKEN")
@@ -308,15 +262,8 @@ func main() {
 		}
 
 		initLEDs()
-		if mode == 1 && *button {
-			initButtons()
-		}
 
-		if mode == 1 {
-			defer embd.CloseGPIO()
-		} else {
-			defer rpio.Close()
-		}
+		defer rpio.Close()
 	} else {
 		initLEDcolors()
 	}

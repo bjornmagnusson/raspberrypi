@@ -2,7 +2,6 @@ package: .
 import:
 - package: github.com/stianeikeland/go-rpio
   version: v3.0.0
-- package: github.com/kidoman/embd
 - package: github.com/golang/glog
 - package: github.com/rs/cors
   version: ^1.0.0
