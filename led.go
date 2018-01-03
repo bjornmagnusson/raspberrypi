@@ -181,9 +181,13 @@ func main() {
 
 	demoMode = *demo
 	isPushoverEnabled = *pushoverFromCli
-
 	pushoverUser = os.Getenv("PUSHOVER_USER")
 	pushoverToken = os.Getenv("PUSHOVER_TOKEN")
+
+	if isPushoverEnabled && (pushoverUser == "" || pushoverToken == "") {
+		fmt.Println("Pushover env variables are undefined, disabling pushover notifs")
+		isPushoverEnabled = false
+	}
 
 	if demoMode {
 		fmt.Println("Running in demo mode, no physical hw interaction")
