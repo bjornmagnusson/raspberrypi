@@ -138,12 +138,16 @@ type PushoverMessage struct {
 	Message string `json:"message"`
 }
 
-func ledModeHandler(w http.ResponseWriter, r *http.Request) {
+func toggleLedMode() {
 	if ledMode == 0 {
 		ledMode = 1
 	} else {
 		ledMode = 0
 	}
+}
+
+func ledModeHandler(w http.ResponseWriter, r *http.Request) {
+	toggleLedMode()
 
 	if isPushoverEnabled {
 		message := PushoverMessage{pushoverToken, pushoverUser, "LED mode toggled"}
@@ -181,7 +185,9 @@ func initWebServer() {
 func listenForButtonPress() {
 	fmt.Println("Listening for button presses")
 	for {
+		fmt.Println("Check buttons")
 		for button := 0; button < len(buttons); button++ {
+			fmt.Println("Check button ", buttons[button].Function())
 			buttons[button].WaitForEdge(-1)
 			fmt.Printf("-> %s\n", buttons[button].Read())
 		}
