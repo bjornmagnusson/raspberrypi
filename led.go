@@ -187,7 +187,7 @@ func listenForButtonPress() {
 	for {
 		fmt.Println("Check buttons")
 		for button := 0; button < len(buttons); button++ {
-			fmt.Println("Check button ", buttons[button].Function())
+			fmt.Println("Check button ", buttons[button]
 			buttons[button].WaitForEdge(-1)
 			fmt.Printf("-> %s\n", buttons[button].Read())
 		}
