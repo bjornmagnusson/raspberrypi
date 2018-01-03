@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	mode     = 2 // 0=go-rpio,2=periph
+	mode     = 2
 	demoMode = false
 	isPushoverEnabled = false
 
@@ -27,7 +27,7 @@ var (
 	ledYellowPin = 17
 	ledGreenPin  = 27
 	ledToColor   = map[int]string{}
-	ledMapPeriph = map[int]gpio.PinIO{}
+	ledMap = map[int]gpio.PinIO{}
 	ledMode 		 = 0
 
 	// Buttons
@@ -38,7 +38,7 @@ var (
 	gpios = map[int]Gpio{}
 	demoNum = 26
 
-	// PUSHOVER_USER
+	// Pushover
 	pushoverUser = ""
 	pushoverToken = ""
 	pushoverApi = "https://api.pushover.net:443/1/messages.json"
@@ -52,7 +52,7 @@ func setGpio(id int, name string, value int) {
 	gpios[id] = Gpio{id, name, value}
 }
 
-func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
+func toggleLED(id int, pin gpio.PinIO, color string) {
 	//fmt.Println(getLEDString(color))
 	if !demoMode {
 		//fmt.Println("Val to write", !pin.Read())
@@ -67,18 +67,19 @@ func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
 
 func initButtons() {
 	buttons[0] = gpioreg.ByName(strconv.Itoa(buttonPin))
-	fmt.Printf("%s: %s\n", buttons[0], buttons[0].Function())
-
 	buttons[0].In(gpio.PullDown, gpio.BothEdges)
+	for button := 0; button < len(buttons); button++ {
+		fmt.Printf("%s: %s\n", buttons[button], buttons[button].Function())
+	}
 }
 
 func initLEDs() {
 	if mode == 2 {
-		ledMapPeriph[0] = gpioreg.ByName(strconv.Itoa(ledRedPin))
-		ledMapPeriph[1] = gpioreg.ByName(strconv.Itoa(ledYellowPin))
-		ledMapPeriph[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
-		for i := 0; i < len(ledMapPeriph); i++ {
-			ledMapPeriph[i].Out(gpio.Low)
+		ledMap[0] = gpioreg.ByName(strconv.Itoa(ledRedPin))
+		ledMap[1] = gpioreg.ByName(strconv.Itoa(ledYellowPin))
+		ledMap[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
+		for i := 0; i < len(ledMap); i++ {
+			ledMap[i].Out(gpio.Low)
 		}
 	}
 	initLEDcolors()
@@ -98,7 +99,7 @@ func initGPIO() error {
 func doLedToggling(i int, isSleepEnabled bool) {
 	if !demoMode {
 	  if mode == 2{
-			toggleLEDPeriph(i%3, ledMapPeriph[i%3], ledToColor[i%3])
+			toggleLED(i%3, ledMap[i%3], ledToColor[i%3])
 		}
 	} else {
 		fmt.Println(getLEDString(ledToColor[i%3]))
@@ -210,12 +211,7 @@ func main() {
 	if demoMode {
 		fmt.Println("Running in demo mode, no physical hw interaction")
 	}
-	if mode == 2 {
-		fmt.Println("Running using periph")
-	} else {
-		fmt.Println("Running using periph")
-		mode = 2
-	}
+
 	fmt.Println("Number of blinks:", *num)
 
 	if *api {
