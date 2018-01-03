@@ -31,7 +31,8 @@ var (
 	ledMode 		 = 0
 
 	// Buttons
-	buttonPin = 22
+	buttonPin 	= 22
+	buttons 		= map[int]gpio.PinIO{}
 
 	// GPIOs
 	gpios = map[int]Gpio{}
@@ -62,6 +63,13 @@ func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
 		}
 		setGpio(id, pin.Name(), value)
 	}
+}
+
+func initButtons() {
+	buttons[0] = gpioreg.ByName(strconv.Itoa(buttonPin))
+	fmt.Printf("%s: %s\n", buttons[0], buttons[0].Function())
+
+	buttons[0].In(gpio.PullDown, gpio.BothEdges)
 }
 
 func initLEDs() {
@@ -169,10 +177,20 @@ func initWebServer() {
 	http.ListenAndServe(":8080", handler)
 }
 
+func listenForButtonPress() {
+	fmt.Println("Listening for button presses")
+	for {
+		for button := 0; button < len(buttons); button++ {
+			buttons[button].WaitForEdge(-1)
+			fmt.Printf("-> %s\n", buttons[button].Read())
+		}
+	}
+}
+
 func main() {
 	fmt.Println("Parsing parameters")
 	num := flag.Int("num", 0, "number of blinks")
-	button := flag.Bool("button", false, "button mode")
+	buttonEnabled := flag.Bool("button", false, "button mode")
 	api := flag.Bool("api", true, "API enabled")
 	demo := flag.Bool("demo", false, "Demo mode enabled")
 	pushoverFromCli := flag.Bool("pushover", false, "Pushover notifications enabled")
@@ -211,27 +229,29 @@ func main() {
 			os.Exit(1)
 		}
 		initLEDs()
+		initButtons()
+		if *buttonEnabled {
+			go listenForButtonPress()
+		}
 	} else {
 		initLEDcolors()
 	}
 
-	if !*button {
-		if *num == 0 {
-			var counter = 0
-			for {
-				if ledMode == 0 {
-					doLedToggling(counter, true)
-				} else if ledMode == 1 {
-					doLedToggling(counter, false)
-					doLedToggling(counter + 1, false)
-					doLedToggling(counter + 2, true)
-				}
-				counter++
+	if *num == 0 {
+		var counter = 0
+		for {
+			if ledMode == 0 {
+				doLedToggling(counter, true)
+			} else if ledMode == 1 {
+				doLedToggling(counter, false)
+				doLedToggling(counter + 1, false)
+				doLedToggling(counter + 2, true)
 			}
-		} else {
-			for i := 0; i < *num; i++ {
-				doLedToggling(i, true)
-			}
+			counter++
+		}
+	} else {
+		for i := 0; i < *num; i++ {
+			doLedToggling(i, true)
 		}
 	}
 }
