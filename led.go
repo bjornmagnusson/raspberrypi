@@ -68,8 +68,8 @@ func toggleLED(id int, pin gpio.PinIO, color string) {
 func initButtons() {
 	buttons[0] = gpioreg.ByName(strconv.Itoa(buttonPin))
 	buttons[0].In(gpio.PullDown, gpio.BothEdges)
-	for button := 0; button < len(buttons); button++ {
-		fmt.Printf("%s: %s\n", buttons[button], buttons[button].Function())
+	for buttonIndex := 0; buttonIndex < len(buttons); buttonIndex++ {
+		fmt.Printf("%s: %s\n", buttons[buttonIndex], buttons[buttonIndex].Function())
 	}
 }
 
@@ -79,6 +79,7 @@ func initLEDs() {
 		ledMap[1] = gpioreg.ByName(strconv.Itoa(ledYellowPin))
 		ledMap[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
 		for i := 0; i < len(ledMap); i++ {
+			fmt.Println("Resetting ", ledMap[i])
 			ledMap[i].Out(gpio.Low)
 		}
 	}
