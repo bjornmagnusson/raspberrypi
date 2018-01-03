@@ -243,7 +243,7 @@ func main() {
 		initLEDs()
 		initButtons()
 		if *buttonEnabled {
-			go listenForButtonsPress()
+			listenForButtonsPress()
 		}
 	} else {
 		initLEDcolors()
