@@ -1,4 +1,4 @@
-FROM resin/rpi-raspbian:jessie-20170111 as build
+FROM resin/rpi-raspbian:jessie-20171227 as build
 
 # Install Go
 ENV GOVERSION 1.9.2
