@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -67,7 +68,9 @@ func toggleLED(id int, pin gpio.PinIO, color string) {
 
 func initButtons() {
 	buttons[0] = gpioreg.ByName(strconv.Itoa(buttonPin))
-	buttons[0].In(gpio.PullDown, gpio.BothEdges)
+	if err := buttons[0].In(gpio.PullDown, gpio.BothEdges); err != nil {
+  	log.Fatal(err)
+  }
 	for buttonIndex := 0; buttonIndex < len(buttons); buttonIndex++ {
 		fmt.Printf("%s: %s\n", buttons[buttonIndex], buttons[buttonIndex].Function())
 	}
@@ -80,7 +83,9 @@ func initLEDs() {
 		ledMap[2] = gpioreg.ByName(strconv.Itoa(ledGreenPin))
 		for i := 0; i < len(ledMap); i++ {
 			fmt.Println("Resetting ", ledMap[i])
-			ledMap[i].Out(gpio.Low)
+			if err := ledMap[i].Out(gpio.Low); err != nil {
+        log.Fatal(err)
+      }
 		}
 	}
 	initLEDcolors()
