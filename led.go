@@ -188,19 +188,13 @@ func initWebServer() {
 	http.ListenAndServe(":8080", handler)
 }
 
-func listenForButtonPress(button gpio.PinIO) {
-	for {
-		fmt.Println("Check button ", button)
-		button.WaitForEdge(-1)
-		fmt.Printf("-> %s\n", button.Read())
-	}
-}
-
 func listenForButtonsPress() {
 	fmt.Println("Listening for button presses")
 	fmt.Println("Check buttons")
-	for button := 0; button < len(buttons); button++ {
-		listenForButtonPress(buttons[button])
+	for {
+		fmt.Println("Check button ", buttons[0])
+		buttons[0].WaitForEdge(-1)
+		fmt.Printf("-> %s\n", button.Read())
 	}
 }
 
@@ -243,7 +237,7 @@ func main() {
 		initLEDs()
 		initButtons()
 		if *buttonEnabled {
-			listenForButtonsPress()
+			go listenForButtonsPress()
 		}
 	} else {
 		initLEDcolors()
