@@ -53,9 +53,9 @@ func setGpio(id int, name string, value int) {
 }
 
 func toggleLEDPeriph(id int, pin gpio.PinIO, color string) {
-	fmt.Println(getLEDString(color))
+	//fmt.Println(getLEDString(color))
 	if !demoMode {
-		fmt.Println("Val to write", !pin.Read())
+		//fmt.Println("Val to write", !pin.Read())
 		pin.Out(!pin.Read())
 		value := 0
 		if pin.Read() == gpio.High {
