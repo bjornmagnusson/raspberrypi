@@ -200,7 +200,7 @@ func listenForButtonsPress() {
 	fmt.Println("Listening for button presses")
 	fmt.Println("Check buttons")
 	for button := 0; button < len(buttons); button++ {
-		go listenForButtonPress(buttons[button])
+		listenForButtonPress(buttons[button])
 	}
 }
 
@@ -243,7 +243,7 @@ func main() {
 		initLEDs()
 		initButtons()
 		if *buttonEnabled {
-			listenForButtonsPress()
+			go listenForButtonsPress()
 		}
 	} else {
 		initLEDcolors()
