@@ -152,11 +152,9 @@ func toggleLedMode() {
 	}
 }
 
-func ledModeHandler(w http.ResponseWriter, r *http.Request) {
-	toggleLedMode()
-
+func sendPushoverMessage(message string) {
 	if isPushoverEnabled {
-		message := PushoverMessage{pushoverToken, pushoverUser, "LED mode toggled"}
+		message := PushoverMessage{pushoverToken, pushoverUser, message}
 		json, err := json.Marshal(message)
 		var jsonStr = []byte(json)
 
@@ -179,6 +177,11 @@ func ledModeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func ledModeHandler(w http.ResponseWriter, r *http.Request) {
+	toggleLedMode()
+	sendPushoverMessage("LED mode toggled from API")
+}
+
 func initWebServer() {
 	fmt.Println("Initializing Webserver")
 	mux := http.NewServeMux()
@@ -197,6 +200,7 @@ func listenForButtonPress(button gpio.PinIO) {
 		fmt.Printf("-> %s\n", buttonState)
 		if buttonState == gpio.High {
 			toggleLedMode()
+			sendPushoverMessage("LED mode toggled using button")
 		}
 	}
 }
