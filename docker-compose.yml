@@ -16,3 +16,4 @@ services:
         constraints:
           - node.hostname == pi1
     privileged: true
+    restart: on-failure
