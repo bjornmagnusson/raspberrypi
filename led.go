@@ -203,7 +203,7 @@ func listenForButtonPress(button gpio.PinIO) {
 
 func listenForButtonsPress() {
 	fmt.Println("Listening for button presses")
-	listenForButtonPress(buttons[0])
+	go listenForButtonPress(buttons[0])
 }
 
 func main() {
@@ -245,7 +245,7 @@ func main() {
 		initLEDs()
 		initButtons()
 		if *buttonEnabled {
-			go listenForButtonsPress()
+			listenForButtonsPress()
 		}
 	} else {
 		initLEDcolors()
