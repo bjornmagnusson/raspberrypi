@@ -68,7 +68,7 @@ func toggleLED(id int, pin gpio.PinIO, color string) {
 
 func initButtons() {
 	buttons[0] = gpioreg.ByName(strconv.Itoa(buttonPin))
-	if err := buttons[0].In(gpio.PullDown, gpio.BothEdges); err != nil {
+	if err := buttons[0].In(gpio.PullUp, gpio.BothEdges); err != nil {
   	log.Fatal(err)
   }
 	for buttonIndex := 0; buttonIndex < len(buttons); buttonIndex++ {
@@ -188,14 +188,22 @@ func initWebServer() {
 	http.ListenAndServe(":8080", handler)
 }
 
+func listenForButtonPress(button gpio.PinIO) {
+	buttonState := gpio.High
+	for {
+		fmt.Println("Check button ", button)
+		button.WaitForEdge(-1)
+		buttonState = button.Read()
+		fmt.Printf("-> %s\n", buttonState)
+		if buttonState == gpio.High {
+			toggleLedMode()
+		}
+	}
+}
+
 func listenForButtonsPress() {
 	fmt.Println("Listening for button presses")
-	fmt.Println("Check buttons")
-	for {
-		fmt.Println("Check button ", buttons[0])
-		buttons[0].WaitForEdge(-1)
-		fmt.Printf("-> %s\n", buttons[0].Read())
-	}
+	listenForButtonPress(buttons[0])
 }
 
 func main() {
