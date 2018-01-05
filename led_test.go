@@ -37,3 +37,21 @@ func TestBuildGpio(t *testing.T) {
 		t.Errorf("Test failed")
 	}
 }
+
+func TestGetLedModeForZero(t *testing.T) {
+	expected := 1
+	actual := getLedMode(0)
+
+	if actual != expected {
+		t.Errorf("Test failed, expected: %d, got: %d", expected, actual)
+	}
+}
+
+func TestGetLedModeForOne(t *testing.T) {
+	expected := 0
+	actual := getLedMode(1)
+
+	if actual != expected {
+		t.Errorf("Test failed, expected: %d, got: %d", expected, actual)
+	}
+}

@@ -22,6 +22,9 @@ var (
 	mode     = 2
 	demoMode = false
 	isPushoverEnabled = false
+	num 		 = 0
+	api 		 = false
+	buttonEnabled = false
 
 	// LEDs
 	ledRedPin    = 4
@@ -137,12 +140,16 @@ type PushoverMessage struct {
 	Message string `json:"message"`
 }
 
-func toggleLedMode() {
-	if ledMode == 0 {
-		ledMode = 1
+func getLedMode(currentLedMode int) int {
+	if currentLedMode == 0 {
+		return 1
 	} else {
-		ledMode = 0
+		return 0
 	}
+}
+
+func toggleLedMode() {
+	ledMode = getLedMode(ledMode)
 }
 
 func sendPushoverMessage(message string) {
@@ -203,50 +210,27 @@ func listenForButtonsPress() {
 	go listenForButtonPress(buttons[0])
 }
 
-func main() {
+func parseParameters() {
 	fmt.Println("Parsing parameters")
-	num := flag.Int("num", 0, "number of blinks")
-	buttonEnabled := flag.Bool("button", false, "button mode")
-	api := flag.Bool("api", true, "API enabled")
-	demo := flag.Bool("demo", false, "Demo mode enabled")
+	numFromCli := flag.Int("num", 0, "number of blinks")
+	buttonEnabledFromCli := flag.Bool("button", false, "button mode")
+	apiFromCli := flag.Bool("api", true, "API enabled")
+	demoFromCli := flag.Bool("demo", false, "Demo mode enabled")
 	pushoverFromCli := flag.Bool("pushover", false, "Pushover notifications enabled")
 
 	flag.Parse()
 
-	demoMode = *demo
+	buttonEnabled = *buttonEnabledFromCli
+	api = *apiFromCli
+	demoMode = *demoFromCli
 	isPushoverEnabled = *pushoverFromCli
+	num = *numFromCli
 	pushoverUser = os.Getenv("PUSHOVER_USER")
 	pushoverToken = os.Getenv("PUSHOVER_TOKEN")
+}
 
-	if isPushoverEnabled && (pushoverUser == "" || pushoverToken == "") {
-		fmt.Println("Pushover env variables are undefined, disabling pushover notifs")
-		isPushoverEnabled = false
-	}
-
-	if demoMode {
-		fmt.Println("Running in demo mode, no physical hw interaction")
-	}
-
-	fmt.Println("Number of blinks:", *num)
-
-	if *api {
-		go initWebServer()
-	}
-
-	if !demoMode {
-		var err = initGPIO()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		initLEDs()
-		initButtons()
-		if *buttonEnabled {
-			listenForButtonsPress()
-		}
-	}
-
-	if *num == 0 {
+func startLedToggling() {
+	if num == 0 {
 		var counter = 0
 		for {
 			if ledMode == 0 {
@@ -259,8 +243,45 @@ func main() {
 			counter++
 		}
 	} else {
-		for i := 0; i < *num; i++ {
+		for i := 0; i < num; i++ {
 			doLedToggling(i, true)
 		}
 	}
+}
+
+func initPins() {
+	if !demoMode {
+		var err = initGPIO()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		initLEDs()
+		initButtons()
+		if buttonEnabled {
+			listenForButtonsPress()
+		}
+	}
+}
+
+func main() {
+	parseParameters()
+
+	if isPushoverEnabled && (pushoverUser == "" || pushoverToken == "") {
+		fmt.Println("Pushover env variables are undefined, disabling pushover notifs")
+		isPushoverEnabled = false
+	}
+
+	if demoMode {
+		fmt.Println("Running in demo mode, no physical hw interaction")
+	}
+
+	fmt.Println("Number of blinks:", num)
+
+	if api {
+		go initWebServer()
+	}
+
+	initPins()
+	startLedToggling()
 }
