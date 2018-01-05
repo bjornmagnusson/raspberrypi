@@ -49,8 +49,8 @@ func getLEDString(color string) string {
 	return "Toggle " + strings.ToUpper(color)
 }
 
-func setGpio(id int, name string, value int) {
-	gpios[id] = Gpio{id, name, value}
+func buildGpio(id int, name string, value int) Gpio {
+	return Gpio{id, name, value}
 }
 
 func toggleLED(id int, pin gpio.PinIO, color string) {
@@ -62,7 +62,7 @@ func toggleLED(id int, pin gpio.PinIO, color string) {
 		if pin.Read() == gpio.High {
 			value = 1
 		}
-		setGpio(id, pin.Name(), value)
+		gpios[id] = buildGpio(id, pin.Name(), value)
 	}
 }
 
@@ -109,7 +109,7 @@ func doLedToggling(i int, isSleepEnabled bool) {
 		}
 	} else {
 		fmt.Println(getLEDString(ledToColor[i%3]))
-		setGpio(i%demoNum, "GPIO" + strconv.Itoa(i%demoNum), i % 2)
+		gpios[i] = buildGpio(i%demoNum, "GPIO" + strconv.Itoa(i%demoNum), i % 2)
 	}
 
 	if isSleepEnabled {

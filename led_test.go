@@ -28,3 +28,12 @@ func TestLEDStringYellow(t *testing.T) {
 		t.Errorf("Test failed, expected: %s, got: %s", expected, actual)
 	}
 }
+
+func TestBuildGpio(t *testing.T) {
+	expected := Gpio{0, "name", 1}
+	actual := buildGpio(0, "name", 1)
+
+	if actual != expected {
+		t.Errorf("Test failed")
+	}
+}

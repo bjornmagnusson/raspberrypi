@@ -15,9 +15,9 @@ RUN mkdir -p $GOPATH/src/app
 WORKDIR $GOPATH/src/app
 COPY . $GOPATH/src/app
 RUN go build -v led.go && \
+    go test -v && \
     mv led /usr/local/bin && \
-    chmod +x /usr/local/bin/led && \
-    go test
+    chmod +x /usr/local/bin/led
 
 FROM resin/rpi-raspbian:jessie-20170111
 ENV PUSHOVER_TOKEN ""
