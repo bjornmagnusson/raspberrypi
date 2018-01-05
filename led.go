@@ -27,7 +27,7 @@ var (
 	ledRedPin    = 4
 	ledYellowPin = 17
 	ledGreenPin  = 27
-	ledToColor   = map[int]string{}
+	ledToColor   = map[int]string{0: "red", 1: "yellow", 2: "green"}
 	ledMap = map[int]gpio.PinIO{}
 	ledMode 		 = 0
 
@@ -88,13 +88,6 @@ func initLEDs() {
       }
 		}
 	}
-	initLEDcolors()
-}
-
-func initLEDcolors() {
-	ledToColor[0] = "red"
-	ledToColor[1] = "yellow"
-	ledToColor[2] = "green"
 }
 
 func initGPIO() error {
@@ -251,8 +244,6 @@ func main() {
 		if *buttonEnabled {
 			listenForButtonsPress()
 		}
-	} else {
-		initLEDcolors()
 	}
 
 	if *num == 0 {
