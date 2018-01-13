@@ -213,7 +213,7 @@ func listenForButtonsPress() {
 func parseParameters() {
 	fmt.Println("Parsing parameters")
 	numFromCli := flag.Int("num", 0, "number of blinks")
-	buttonEnabledFromCli := flag.Bool("button", false, "button mode")
+	buttonEnabledFromCli := flag.Bool("button", true, "button mode")
 	apiFromCli := flag.Bool("api", true, "API enabled")
 	demoFromCli := flag.Bool("demo", false, "Demo mode enabled")
 	pushoverFromCli := flag.Bool("pushover", false, "Pushover notifications enabled")
