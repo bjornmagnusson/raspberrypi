@@ -19,12 +19,12 @@ env:
   - secure: t6Y9sxOaSN8YTTa0m8XPklEX6E5M701VqZX3XESAhXfVC2ePd1mHCEdP0aMOLmzSe3L9HEXDp3IISM9qdcRdkiNe60d/ON7mQ43KOKZEcVrsSK/rQgi2SjypJF4EOKBtjprzc5XvpJCCgdp+MBOplcBHp15ySIN0dV0oKSNymOQJprNQImkeT2kpCJxFzk9fpf9XneZvXsOPaFyxXHTz6lsRcx4FzzDUdnILLbcMaGF+vstrvTX6e/LhcRY9bB/7SCaE82EL1/I2tITGB1gpQi2LC/urnI+hAneiyWT4YEIV42QPhJoUdzT89DFYUOjcgbJe7cAC0KK1QVBAkdbeagHSebN/CARvCwmJWJVHf8xW4kwKTkjoE8r5wYbFZyOCpv2FaaYpP84Z5+LdDfLvtSdcoLZFCalOcNKS9mFztv4AE0gmF4qLScUJ1lsXTX64rGkH33wjjDiyMx92TbyW+F4EghKU62lAM5HRx92P8v7aMxlbzcJCHSaamZoUSua8PJCfAshXtLmYd/qYDr5t5O6rsKCKe9Z/+0AXYaV3Hfq1VALr4KqbzuzMAXxSOV+8iTT/gp+KAsViRxhuP62u07yBPdiRblmY2qCA2cvT/ogUpAmMVz/ECyiRs01f20e84j0hArBN6lsrNY1zqtbfZARrolzV2ebftFLxqymUyWg=
 before_install:
 - eval "$(ssh-agent -s)"
-- sudo mkdir -p ~\/.ssh
+- mkdir -p ~\/.ssh
 - sudo chmod 777 ~\/.ssh
-- sudo touch ~\/.ssh/id_rsa
-- sudo touch ~\/.ssh/known_hosts
-- sudo openssl aes-256-cbc -K $encrypted_ce8f5f305d9b_key -iv $encrypted_ce8f5f305d9b_iv -in id_rsa.enc -out ~\/.ssh/id_rsa -d
-- sudo cat resinkey >> ~\/.ssh/known_hosts
+- touch ~\/.ssh/id_rsa
+- touch ~\/.ssh/known_hosts
+- openssl aes-256-cbc -K $encrypted_ce8f5f305d9b_key -iv $encrypted_ce8f5f305d9b_iv -in id_rsa.enc -out ~\/.ssh/id_rsa -d
+- cat resinkey >> ~\/.ssh/known_hosts
 - sudo apt-get update
 - sudo apt-get -y -o Dpkg::Options::="--force-confnew" install docker-ce
 after_success:
