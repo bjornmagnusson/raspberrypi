@@ -23,6 +23,7 @@ before_install:
 - sudo chmod 777 ~\/.ssh
 - touch ~\/.ssh/id_rsa
 - touch ~\/.ssh/known_hosts
+- echo -e "Host git.resin.io\n\tStrictHostKeyChecking no\n" >> ~\/.ssh/config
 - openssl aes-256-cbc -K $encrypted_ce8f5f305d9b_key -iv $encrypted_ce8f5f305d9b_iv -in id_rsa.enc -out ~\/.ssh/id_rsa -d
 - cat resinkey >> ~\/.ssh/known_hosts
 - sudo apt-get update
