@@ -23,5 +23,8 @@ before_install:
 - sudo apt-get update
 - sudo apt-get -y -o Dpkg::Options::="--force-confnew" install docker-ce
 after_success:
-  - git remote add resin $RESIN_REMOTE
-  - git push resin master
+  - |
+    if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+      git remote add resin $RESIN_REMOTE
+      git push resin master
+    fi
