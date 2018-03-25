@@ -5,7 +5,7 @@ volumes:
 
 services:
   led:
-    image: bjornmagnusson/pi-led
+    image: bjornmagnusson/pi-led:latest
     privileged: true
     restart: always
     network_mode: host
