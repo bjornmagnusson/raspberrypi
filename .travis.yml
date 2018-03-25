@@ -5,12 +5,12 @@ language: bash
 script:
 - docker version
 - docker run --rm --privileged multiarch/qemu-user-static:register --reset
-- docker-compose build
+- docker-compose -f docker-compose.dev.yml build
 - docker run bjornmagnusson/pi-led -demo=true -num=3
 - |
   if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
     docker login -u="$DOCKER_USER" -p="$DOCKER_PASS"
-    docker-compose push
+    docker-compose -f docker-compose.dev.yml push
   fi
 env:
   global:
