@@ -16,5 +16,5 @@ services:
       io.resin.features.resin-api: '1'
       io.resin.update.strategy: kill-then-download
       io.resin.update.handover-timeout: '5000'
-    volumes:
-      resin-data: {}
+  volumes:
+    resin-data: {}
