@@ -43,7 +43,7 @@ jobs:
           name: Deploy to resin.io
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
-              npm install resin-cli -g --production --unsafe-perm
+              sudo npm install resin-cli -g --production --unsafe-perm
               resin login --token $RESIN_TOKEN
               resin deploy pi1led
             fi
