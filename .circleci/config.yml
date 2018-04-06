@@ -34,23 +34,23 @@ jobs:
               docker login -u $DOCKER_USER -p $DOCKER_PASS
               TAG=${CIRCLE_TAG} docker-compose -f docker-compose.dev.yml push
             fi
-    deploy:
-      docker:
-        - image: node:8-alpine
-      steps:
-        - deploy:
-            name: Deploy to resin.io
-            command: |
-              if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                npm install resin-cli -g --production --unsafe-perm
-                resin login --token $RESIN_TOKEN
-                resin deploy pi1led
-              fi
-              if [[ ! -z "${CIRCLE_TAG}" ]]; then
-                npm install resin-cli -g --production --unsafe-perm
-                resin login --token $RESIN_TOKEN
-                resin deploy pi1led
-              fi
+  deploy:
+    docker:
+      - image: node:8-alpine
+    steps:
+      - deploy:
+          name: Deploy to resin.io
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              npm install resin-cli -g --production --unsafe-perm
+              resin login --token $RESIN_TOKEN
+              resin deploy pi1led
+            fi
+            if [[ ! -z "${CIRCLE_TAG}" ]]; then
+              npm install resin-cli -g --production --unsafe-perm
+              resin login --token $RESIN_TOKEN
+              resin deploy pi1led
+            fi
 workflows:
   version: 2
   build:
