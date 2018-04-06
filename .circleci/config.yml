@@ -37,7 +37,7 @@ jobs:
             fi
   deploy:
     docker:
-      - image: circleci/node:8.11.1
+      - image: circleci/node:6.14.0
     steps:
       - run:
           name: Configure resin.io
