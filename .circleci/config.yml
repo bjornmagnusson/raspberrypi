@@ -71,6 +71,8 @@ workflows:
             branches:
               only: master
       - deploy:
+          requires:
+            - build
           context: RESIN_IO
           filters:
             tags:
