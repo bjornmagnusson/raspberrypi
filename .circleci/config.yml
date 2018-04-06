@@ -45,6 +45,7 @@ jobs:
             sudo npm install resin-cli -g --production --unsafe-perm
             resin login --token $RESIN_TOKEN
       - setup_remote_docker
+      - checkout
       - deploy:
           name: Deploy to resin.io (pi1led)
           command: |
