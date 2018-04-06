@@ -39,17 +39,18 @@ jobs:
     docker:
       - image: circleci/node:8.11.1
     steps:
+      - run:
+          name: Configure resin.io
+          command: |
+            sudo npm install resin-cli -g --production --unsafe-perm
+            resin login --token $RESIN_TOKEN
       - deploy:
-          name: Deploy to resin.io
+          name: Deploy to resin.io (pi1led)
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
-              sudo npm install resin-cli -g --production --unsafe-perm
-              resin login --token $RESIN_TOKEN
               resin deploy pi1led
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              sudo npm install resin-cli -g --production --unsafe-perm
-              resin login --token $RESIN_TOKEN
               resin deploy pi1led
             fi
 workflows:
