@@ -48,7 +48,7 @@ jobs:
               resin deploy pi1led
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              npm install resin-cli -g --production --unsafe-perm
+              sudo npm install resin-cli -g --production --unsafe-perm
               resin login --token $RESIN_TOKEN
               resin deploy pi1led
             fi
