@@ -37,11 +37,12 @@ jobs:
             fi
   deploy:
     docker:
-      - image: bjornmagnusson/resinio-client
+      - image: circleci/node:6.14.0
     steps:
       - run:
-          name: Authenticate to resin.io
+          name: Configure resin.io
           command: |
+            sudo npm install resin-cli -g --production --unsafe-perm
             resin login --token $RESIN_TOKEN
       - setup_remote_docker
       - checkout
