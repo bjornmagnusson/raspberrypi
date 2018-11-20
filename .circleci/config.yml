@@ -40,19 +40,19 @@ jobs:
       - image: bjornmagnusson/resinio-client
     steps:
       - run:
-          name: Authenticate to resin.io
+          name: Authenticate to balena-cloud
           command: |
-            resin login --token $RESIN_TOKEN
+            balena login --token $RESIN_TOKEN
       - setup_remote_docker
       - checkout
       - deploy:
-          name: Deploy to resin.io (pi1led)
+          name: Deploy to balena cloud (pi1led)
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
-              resin deploy pi1led
+              balena deploy pi1led
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              resin deploy pi1led
+              balena deploy pi1led
             fi
 workflows:
   version: 2
