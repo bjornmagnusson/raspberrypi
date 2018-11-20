@@ -273,7 +273,7 @@ func main() {
 	}
 
 	if demoMode {
-		fmt.Println("Running in demo mode, no physical hw interaction")
+		fmt.Println("Running in demo mode, no physical hardware interaction")
 	}
 
 	fmt.Println("Number of blinks:", num)
