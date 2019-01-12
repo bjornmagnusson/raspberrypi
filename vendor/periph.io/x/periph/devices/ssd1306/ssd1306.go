@@ -2,32 +2,6 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package ssd1306 controls a 128x64 monochrome OLED display via a SSD1306
-// controller.
-//
-// The driver does differential updates: it only sends modified pixels for the
-// smallest rectangle, to economize bus bandwidth. This is especially important
-// when using I²C as the bus default speed (often 100kHz) is slow enough to
-// saturate the bus at less than 10 frames per second.
-//
-// The SSD1306 is a write-only device. It can be driven on either I²C or SPI
-// with 4 wires. Changing between protocol is likely done through resistor
-// soldering, for boards that support both.
-//
-// Some boards expose a RES / Reset pin. If present, it must be normally be
-// High. When set to Low (Ground), it enables the reset circuitry. It can be
-// used externally to this driver, if used, the driver must be reinstantiated.
-//
-// Datasheets
-//
-// Product page:
-// http://www.solomon-systech.com/en/product/display-ic/oled-driver-controller/ssd1306/
-//
-// https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf
-//
-// "DM-OLED096-624": https://drive.google.com/file/d/0B5lkVYnewKTGaEVENlYwbDkxSGM/view
-//
-// "ssd1306": https://drive.google.com/file/d/0B5lkVYnewKTGYzhyWWp0clBMR1E/view
 package ssd1306
 
 // Some have SPI enabled;
@@ -43,10 +17,11 @@ import (
 	"image/draw"
 
 	"periph.io/x/periph/conn"
+	"periph.io/x/periph/conn/display"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/i2c"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
-	"periph.io/x/periph/devices"
 	"periph.io/x/periph/devices/ssd1306/image1bit"
 )
 
@@ -77,6 +52,72 @@ const (
 	UpLeft  Orientation = 0x2A
 )
 
+// DefaultOpts is the recommended default options.
+var DefaultOpts = Opts{
+	W:             128,
+	H:             64,
+	Rotated:       false,
+	Sequential:    false,
+	SwapTopBottom: false,
+}
+
+// Opts defines the options for the device.
+type Opts struct {
+	W int
+	H int
+	// Rotated determines if the display is rotated by 180°.
+	Rotated bool
+	// Sequential corresponds to the Sequential/Alternative COM pin configuration
+	// in the OLED panel hardware. Try toggling this if half the rows appear to be
+	// missing on your display.
+	Sequential bool
+	// SwapTopBottom corresponds to the Left/Right remap COM pin configuration in
+	// the OLED panel hardware. Try toggling this if the top and bottom halves of
+	// your display are swapped.
+	SwapTopBottom bool
+}
+
+// NewSPI returns a Dev object that communicates over SPI to a SSD1306 display
+// controller.
+//
+// The SSD1306 can operate at up to 3.3Mhz, which is much higher than I²C. This
+// permits higher refresh rates.
+//
+// Wiring
+//
+// Connect SDA to SPI_MOSI, SCK to SPI_CLK, CS to SPI_CS.
+//
+// In 3-wire SPI mode, pass nil for 'dc'. In 4-wire SPI mode, pass a GPIO pin
+// to use.
+//
+// The RES (reset) pin can be used outside of this driver but is not supported
+// natively. In case of external reset via the RES pin, this device drive must
+// be reinstantiated.
+func NewSPI(p spi.Port, dc gpio.PinOut, opts *Opts) (*Dev, error) {
+	if dc == gpio.INVALID {
+		return nil, errors.New("ssd1306: use nil for dc to use 3-wire mode, do not use gpio.INVALID")
+	}
+	bits := 8
+	if dc == nil {
+		// 3-wire SPI uses 9 bits per word.
+		bits = 9
+	} else if err := dc.Out(gpio.Low); err != nil {
+		return nil, err
+	}
+	c, err := p.Connect(3300*physic.KiloHertz, spi.Mode0, bits)
+	if err != nil {
+		return nil, err
+	}
+	return newDev(c, opts, true, dc)
+}
+
+// NewI2C returns a Dev object that communicates over I²C to a SSD1306 display
+// controller.
+func NewI2C(i i2c.Bus, opts *Opts) (*Dev, error) {
+	// Maximum clock speed is 1/2.5µs = 400KHz.
+	return newDev(&i2c.Dev{Bus: i, Addr: 0x3C}, opts, false, nil)
+}
+
 // Dev is an open handle to the display controller.
 type Dev struct {
 	// Communication
@@ -101,124 +142,6 @@ type Dev struct {
 	startCol, endCol   int
 	scrolled           bool
 	halted             bool
-	err                error
-}
-
-// NewSPI returns a Dev object that communicates over SPI to a SSD1306 display
-// controller.
-//
-// If rotated is true, turns the display by 180°
-//
-// The SSD1306 can operate at up to 3.3Mhz, which is much higher than I²C. This
-// permits higher refresh rates.
-//
-// Wiring
-//
-// Connect SDA to MOSI, SCK to SCLK, CS to CS.
-//
-// In 3-wire SPI mode, pass nil for 'dc'. In 4-wire SPI mode, pass a GPIO pin
-// to use.
-//
-// The RES (reset) pin can be used outside of this driver but is not supported
-// natively. In case of external reset via the RES pin, this device drive must
-// be reinstantiated.
-func NewSPI(p spi.Port, dc gpio.PinOut, w, h int, rotated bool) (*Dev, error) {
-	if dc == gpio.INVALID {
-		return nil, errors.New("ssd1306: use nil for dc to use 3-wire mode, do not use gpio.INVALID")
-	}
-	bits := 8
-	if dc == nil {
-		// 3-wire SPI uses 9 bits per word.
-		bits = 9
-	} else if err := dc.Out(gpio.Low); err != nil {
-		return nil, err
-	}
-	c, err := p.Connect(3300000, spi.Mode0, bits)
-	if err != nil {
-		return nil, err
-	}
-	return newDev(c, w, h, rotated, true, dc)
-}
-
-// NewI2C returns a Dev object that communicates over I²C to a SSD1306 display
-// controller.
-//
-// If rotated, turns the display by 180°
-func NewI2C(i i2c.Bus, w, h int, rotated bool) (*Dev, error) {
-	// Maximum clock speed is 1/2.5µs = 400KHz.
-	return newDev(&i2c.Dev{Bus: i, Addr: 0x3C}, w, h, rotated, false, nil)
-}
-
-// newDev is the common initialization code that is independent of the
-// communication protocol (I²C or SPI) being used.
-func newDev(c conn.Conn, w, h int, rotated, usingSPI bool, dc gpio.PinOut) (*Dev, error) {
-	if w < 8 || w > 128 || w&7 != 0 {
-		return nil, fmt.Errorf("ssd1306: invalid width %d", w)
-	}
-	if h < 8 || h > 64 || h&7 != 0 {
-		return nil, fmt.Errorf("ssd1306: invalid height %d", h)
-	}
-
-	nbPages := h / 8
-	pageSize := w
-	d := &Dev{
-		c:         c,
-		spi:       usingSPI,
-		dc:        dc,
-		rect:      image.Rect(0, 0, int(w), int(h)),
-		buffer:    make([]byte, nbPages*pageSize),
-		startPage: 0,
-		endPage:   nbPages,
-		startCol:  0,
-		endCol:    w,
-		// Signal that the screen must be redrawn on first draw().
-		scrolled: true,
-	}
-	if err := d.sendCommand(getInitCmd(w, h, rotated)); err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
-func getInitCmd(w, h int, rotated bool) []byte {
-	// Set COM output scan direction; C0 means normal; C8 means reversed
-	comScan := byte(0xC8)
-	// See page 40.
-	columnAddr := byte(0xA1)
-	if rotated {
-		// Change order both horizontally and vertically.
-		comScan = 0xC0
-		columnAddr = byte(0xA0)
-	}
-	// Set the max frequency. The problem with I²C is that it creates visible
-	// tear down. On SPI at high speed this is not visible. Page 23 pictures how
-	// to avoid tear down. For now default to max frequency.
-	freq := byte(0xF0)
-
-	// Initialize the device by fully resetting all values.
-	// Page 64 has the full recommended flow.
-	// Page 28 lists all the commands.
-	return []byte{
-		0xAE,       // Display off
-		0xD3, 0x00, // Set display offset; 0
-		0x40,       // Start display start line; 0
-		columnAddr, // Set segment remap; RESET is column 127.
-		comScan,    //
-		0xDA, 0x12, // Set COM pins hardware configuration; see page 40
-		0x81, 0xFF, // Set max contrast
-		0xA4,       // Set display to use GDDRAM content
-		0xA6,       // Set normal display (0xA7 for inverted 0=lit, 1=dark)
-		0xD5, freq, // Set osc frequency and divide ratio; power on reset value is 0x80.
-		0x8D, 0x14, // Enable charge pump regulator; page 62
-		0xD9, 0xF1, // Set pre-charge period; from adafruit driver
-		0xDB, 0x40, // Set Vcomh deselect level; page 32
-		0x2E,              // Deactivate scroll
-		0xA8, byte(h - 1), // Set multiplex ratio (number of lines to display)
-		0x20, 0x00, // Set memory addressing mode to horizontal
-		0x21, 0, uint8(w - 1), // Set column address (Width)
-		0x22, 0, uint8(h/8 - 1), // Set page address (Pages)
-		0xAF, // Display on
-	}
 }
 
 func (d *Dev) String() string {
@@ -228,28 +151,26 @@ func (d *Dev) String() string {
 	return fmt.Sprintf("ssd1360.Dev{%s, %s}", d.c, d.rect.Max)
 }
 
-// ColorModel implements devices.Display.
+// ColorModel implements display.Drawer.
 //
 // It is a one bit color model, as implemented by image1bit.Bit.
 func (d *Dev) ColorModel() color.Model {
 	return image1bit.BitModel
 }
 
-// Bounds implements devices.Display. Min is guaranteed to be {0, 0}.
+// Bounds implements display.Drawer. Min is guaranteed to be {0, 0}.
 func (d *Dev) Bounds() image.Rectangle {
 	return d.rect
 }
 
-// Draw implements devices.Display.
+// Draw implements display.Drawer.
 //
 // It draws synchronously, once this function returns, the display is updated.
-// It means that on slow bus  (I²C), it may be preferable to defer Draw() calls
+// It means that on slow bus (I²C), it may be preferable to defer Draw() calls
 // to a background goroutine.
-//
-// It discards any failure.
-func (d *Dev) Draw(r image.Rectangle, src image.Image, sp image.Point) {
+func (d *Dev) Draw(r image.Rectangle, src image.Image, sp image.Point) error {
 	var next []byte
-	if img, ok := src.(*image1bit.VerticalLSB); ok && r == d.Bounds() && src.Bounds() == d.rect && sp.X == 0 && sp.Y == 0 {
+	if img, ok := src.(*image1bit.VerticalLSB); ok && r == d.rect && img.Rect == d.rect && sp.X == 0 && sp.Y == 0 {
 		// Exact size, full frame, image1bit encoding: fast path!
 		next = img.Pix
 	} else {
@@ -260,12 +181,7 @@ func (d *Dev) Draw(r image.Rectangle, src image.Image, sp image.Point) {
 		next = d.next.Pix
 		draw.Src.Draw(d.next, r, src, sp)
 	}
-	d.err = d.drawInternal(next)
-}
-
-// Err returns the last error that occurred
-func (d *Dev) Err() error {
-	return d.err
+	return d.drawInternal(next)
 }
 
 // Write writes a buffer of pixels to the display.
@@ -355,6 +271,86 @@ func (d *Dev) Invert(blackOnWhite bool) error {
 }
 
 //
+
+// newDev is the common initialization code that is independent of the
+// communication protocol (I²C or SPI) being used.
+func newDev(c conn.Conn, opts *Opts, usingSPI bool, dc gpio.PinOut) (*Dev, error) {
+	if opts.W < 8 || opts.W > 128 || opts.W&7 != 0 {
+		return nil, fmt.Errorf("ssd1306: invalid width %d", opts.W)
+	}
+	if opts.H < 8 || opts.H > 64 || opts.H&7 != 0 {
+		return nil, fmt.Errorf("ssd1306: invalid height %d", opts.H)
+	}
+
+	nbPages := opts.H / 8
+	pageSize := opts.W
+	d := &Dev{
+		c:         c,
+		spi:       usingSPI,
+		dc:        dc,
+		rect:      image.Rect(0, 0, opts.W, opts.H),
+		buffer:    make([]byte, nbPages*pageSize),
+		startPage: 0,
+		endPage:   nbPages,
+		startCol:  0,
+		endCol:    opts.W,
+		// Signal that the screen must be redrawn on first draw().
+		scrolled: true,
+	}
+	if err := d.sendCommand(getInitCmd(opts)); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func getInitCmd(opts *Opts) []byte {
+	// Set COM output scan direction; C0 means normal; C8 means reversed
+	comScan := byte(0xC8)
+	// See page 40.
+	columnAddr := byte(0xA1)
+	if opts.Rotated {
+		// Change order both horizontally and vertically.
+		comScan = 0xC0
+		columnAddr = byte(0xA0)
+	}
+	// See page 40.
+	hwLayout := byte(0x02)
+	if !opts.Sequential {
+		hwLayout |= 0x10
+	}
+	if opts.SwapTopBottom {
+		hwLayout |= 0x20
+	}
+	// Set the max frequency. The problem with I²C is that it creates visible
+	// tear down. On SPI at high speed this is not visible. Page 23 pictures how
+	// to avoid tear down. For now default to max frequency.
+	freq := byte(0xF0)
+
+	// Initialize the device by fully resetting all values.
+	// Page 64 has the full recommended flow.
+	// Page 28 lists all the commands.
+	return []byte{
+		0xAE,       // Display off
+		0xD3, 0x00, // Set display offset; 0
+		0x40,           // Start display start line; 0
+		columnAddr,     // Set segment remap; RESET is column 127.
+		comScan,        //
+		0xDA, hwLayout, // Set COM pins hardware configuration; see page 40
+		0x81, 0xFF, // Set max contrast
+		0xA4,       // Set display to use GDDRAM content
+		0xA6,       // Set normal display (0xA7 for inverted 0=lit, 1=dark)
+		0xD5, freq, // Set osc frequency and divide ratio; power on reset value is 0x80.
+		0x8D, 0x14, // Enable charge pump regulator; page 62
+		0xD9, 0xF1, // Set pre-charge period; from adafruit driver
+		0xDB, 0x40, // Set Vcomh deselect level; page 32
+		0x2E,                   // Deactivate scroll
+		0xA8, byte(opts.H - 1), // Set multiplex ratio (number of lines to display)
+		0x20, 0x00, // Set memory addressing mode to horizontal
+		0x21, 0, uint8(opts.W - 1), // Set column address (Width)
+		0x22, 0, uint8(opts.H/8 - 1), // Set page address (Pages)
+		0xAF, // Display on
+	}
+}
 
 func (d *Dev) calculateSubset(next []byte) (int, int, int, int, bool) {
 	w := d.rect.Dx()
@@ -488,6 +484,4 @@ const (
 	i2cData = 0x40 // I²C transaction has stream of data bytes
 )
 
-var _ conn.Resource = &Dev{}
-var _ devices.Display = &Dev{}
-var _ fmt.Stringer = &Dev{}
+var _ display.Drawer = &Dev{}

@@ -4,19 +4,27 @@
 
 package bcm283x
 
-import "testing"
+import (
+	"testing"
+
+	"periph.io/x/periph/conn/physic"
+)
 
 func TestPWMMap(t *testing.T) {
+	defer reset()
 	p := pwmMap{}
 	p.reset()
-	if _, _, err := setPWMClockSource(10); err == nil {
+	if _, err := setPWMClockSource(); err == nil {
 		t.Fatal("pwmMemory is nil")
 	}
-	defer func() {
-		pwmMemory = nil
-	}()
-	pwmMemory = &p
-	if _, _, err := setPWMClockSource(10); err == nil {
+	drvDMA.pwmMemory = &p
+	if _, err := setPWMClockSource(); err == nil {
 		t.Fatal("clockMemory is nil")
+	}
+	drvDMA.clockMemory = &clockMap{}
+	drvDMA.pwmBaseFreq = 25 * physic.MegaHertz
+	drvDMA.pwmDMAFreq = 200 * physic.KiloHertz
+	if _, err := setPWMClockSource(); err == nil {
+		t.Fatal("can't write to clock register")
 	}
 }

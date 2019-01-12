@@ -15,10 +15,10 @@ import (
 	"os"
 	"sort"
 
-	"periph.io/x/periph/conn/gpio/gpiosmoketest"
-	"periph.io/x/periph/conn/i2c/i2csmoketest"
-	"periph.io/x/periph/conn/onewire/onewiresmoketest"
-	"periph.io/x/periph/conn/spi/spismoketest"
+	"periph.io/x/periph/cmd/periph-smoketest/gpiosmoketest"
+	"periph.io/x/periph/cmd/periph-smoketest/i2csmoketest"
+	"periph.io/x/periph/cmd/periph-smoketest/onewiresmoketest"
+	"periph.io/x/periph/cmd/periph-smoketest/spismoketest"
 	"periph.io/x/periph/devices/bmxx80/bmx280smoketest"
 	"periph.io/x/periph/devices/ssd1306/ssd1306smoketest"
 	"periph.io/x/periph/host"
@@ -61,9 +61,9 @@ var tests = []SmokeTest{
 }
 
 func usage(fs *flag.FlagSet) {
-	io.WriteString(os.Stderr, "Usage: periph-smoketest <args> <name> ...\n\n")
+	_, _ = io.WriteString(os.Stderr, "Usage: periph-smoketest <args> <name> ...\n\n")
 	fs.PrintDefaults()
-	io.WriteString(os.Stderr, "\nTests available:\n")
+	_, _ = io.WriteString(os.Stderr, "\nTests available:\n")
 	names := make([]string, len(tests))
 	desc := make(map[string]string, len(tests))
 	l := 0
@@ -96,7 +96,7 @@ func mainImpl() error {
 	}
 	if fs.NArg() == 0 {
 		fs.Usage()
-		io.WriteString(os.Stdout, "\n")
+		_, _ = io.WriteString(os.Stdout, "\n")
 		return errors.New("please specify a test to run or use -help")
 	}
 	cmd := fs.Arg(0)

@@ -1,24 +1,29 @@
-hash: 9c5288ca85461a5152d66087318cf8aaf7a45b6295736cded5f470ff10937519
-updated: 2018-01-01T22:54:11.456274+01:00
+hash: 23757171825332862897b30056138f49cd6c52f7de601a16aee44446bde2ac04
+updated: 2019-01-12T17:02:48.350589+01:00
 imports:
 - name: github.com/rs/cors
-  version: 7af7a1e09ba336d2ea14b1ce73bf693c6837dbf6
+  version: 9a47f48565a795472d43519dd49aac781f3034fb
 - name: periph.io/x/periph
-  version: bdb4e4c4979bc79ee8c99e6432bd16519d7902a1
+  version: 5bdec8dc7f7a7c7adec37c6821d8728ee92cf2e7
   subpackages:
   - conn
   - conn/gpio
   - conn/gpio/gpioreg
+  - conn/gpio/gpiostream
   - conn/i2c
   - conn/i2c/i2creg
+  - conn/physic
   - conn/pin
   - conn/pin/pinreg
   - conn/spi
   - conn/spi/spireg
-  - devices
   - host
   - host/allwinner
+  - host/am335x
   - host/bcm283x
+  - host/beagle/black
+  - host/beagle/bone
+  - host/beagle/green
   - host/chip
   - host/cpu
   - host/distro

@@ -5,17 +5,6 @@
 // "stringer" can be installed with "go get golang.org/x/tools/cmd/stringer"
 //go:generate stringer -output=strings_gen.go -type=CameraStatus,command,FFCShutterMode,FFCState,ShutterPos,ShutterTempLockoutState
 
-// Package cci declares the Camera Command Interface to interact with a FLIR
-// Lepton over I²C.
-//
-// This protocol controls and queries the camera but is not used to read the
-// images.
-//
-// Datasheet
-//
-// http://www.flir.com/uploadedFiles/OEM/Products/LWIR-Cameras/Lepton/FLIR-Lepton-Software-Interface-Description-Document.pdf
-//
-// Found via http://www.flir.com/cores/display/?id=51878
 package cci
 
 import (
@@ -31,7 +20,7 @@ import (
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/mmr"
-	"periph.io/x/periph/devices"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/devices/lepton/internal"
 )
 
@@ -132,27 +121,11 @@ type FFCMode struct {
 	ShutterTempLockoutState ShutterTempLockoutState // Default: ShutterTempLockoutStateInactive
 	ElapsedTimeSinceLastFFC time.Duration           // Uptime
 	DesiredFFCPeriod        time.Duration           // Default: 300s
-	DesiredFFCTempDelta     devices.Celsius         // Default: 3°C
+	DesiredFFCTempDelta     physic.Temperature      // Default: 3K
 	ImminentDelay           uint16                  // Default: 52
 	VideoFreezeDuringFFC    bool                    // Default: true
 	FFCDesired              bool                    // Default: false
 	ExplicitCommandToOpen   bool                    // Default: false
-}
-
-//
-
-// Dev is the Lepton specific Command and Control Interface (CCI).
-//
-//
-// Dev can safely accessed concurrently via multiple goroutines.
-//
-// This interface is accessed via I²C and provides access to view and modify
-// the internal state.
-//
-// Maximum I²C speed is 1Mhz.
-type Dev struct {
-	c      cciConn
-	serial uint64
 }
 
 // New returns a driver for the FLIR Lepton CCI protocol.
@@ -169,12 +142,35 @@ func New(i i2c.Bus) (*Dev, error) {
 		}
 		//log.Printf("lepton not yet booted: 0x%02x", status)
 		// Polling rocks.
-		time.Sleep(5 * time.Millisecond)
+		sleep(5 * time.Millisecond)
 	}
 }
 
+// Dev is the Lepton specific Command and Control Interface (CCI).
+//
+//
+// Dev can safely accessed concurrently via multiple goroutines.
+//
+// This interface is accessed via I²C and provides access to view and modify
+// the internal state.
+//
+// Maximum I²C speed is 1Mhz.
+type Dev struct {
+	c      cciConn
+	serial uint64
+}
+
+// String implements conn.Resource.
 func (d *Dev) String() string {
 	return d.c.String()
+}
+
+// Halt implements conn.Resource.
+//
+// Halt stops the camera.
+func (d *Dev) Halt() error {
+	// TODO(maruel): Doc says it won't restart. Yo.
+	return d.c.run(oemPowerDown)
 }
 
 // Init initializes the FLIR Lepton in raw 14 bits mode, enables telemetry as
@@ -222,12 +218,6 @@ func (d *Dev) WaitIdle() (StatusBit, error) {
 	return d.c.waitIdle()
 }
 
-// Halt stops the camera.
-func (d *Dev) Halt() error {
-	// TODO(maruel): Doc says it won't restart. Yo.
-	return d.c.run(oemPowerDown)
-}
-
 // GetStatus return the status of the camera as known by the camera itself.
 func (d *Dev) GetStatus() (*Status, error) {
 	var v internal.Status
@@ -258,25 +248,44 @@ func (d *Dev) GetUptime() (time.Duration, error) {
 	if err := d.c.get(sysUptime, &v); err != nil {
 		return 0, err
 	}
-	return v.ToD(), nil
+	return v.Duration(), nil
 }
 
 // GetTemp returns the temperature inside the camera.
-func (d *Dev) GetTemp() (devices.Celsius, error) {
+func (d *Dev) GetTemp() (physic.Temperature, error) {
 	var v internal.CentiK
 	if err := d.c.get(sysTemperature, &v); err != nil {
 		return 0, err
 	}
-	return v.ToC(), nil
+	return v.Temperature(), nil
 }
 
 // GetTempHousing returns the temperature of the camera housing.
-func (d *Dev) GetTempHousing() (devices.Celsius, error) {
+func (d *Dev) GetTempHousing() (physic.Temperature, error) {
 	var v internal.CentiK
 	if err := d.c.get(sysHousingTemperature, &v); err != nil {
 		return 0, err
 	}
-	return v.ToC(), nil
+	return v.Temperature(), nil
+}
+
+// Sense implements physic.SenseEnv. It returns the housing temperature.
+func (d *Dev) Sense(e *physic.Env) error {
+	var err error
+	e.Temperature, err = d.GetTempHousing()
+	return err
+}
+
+// SenseContinuous implements physic.SenseEnv.
+func (d *Dev) SenseContinuous(time.Duration) (<-chan physic.Env, error) {
+	// TODO(maruel): Manually poll in a loop via time.NewTicker, or better
+	// leverage the frames being read.
+	return nil, errors.New("cci: not implemented")
+}
+
+// Precision implements physic.SenseEnv.
+func (d *Dev) Precision(e *physic.Env) {
+	e.Temperature = 10 * physic.MilliKelvin
 }
 
 // GetFFCModeControl returns the internal state with regards to calibration.
@@ -288,9 +297,9 @@ func (d *Dev) GetFFCModeControl() (*FFCMode, error) {
 	return &FFCMode{
 		FFCShutterMode:          FFCShutterMode(v.FFCShutterMode),
 		ShutterTempLockoutState: ShutterTempLockoutState(v.ShutterTempLockoutState),
-		ElapsedTimeSinceLastFFC: v.ElapsedTimeSinceLastFFC.ToD(),
-		DesiredFFCPeriod:        v.DesiredFFCPeriod.ToD(),
-		DesiredFFCTempDelta:     devices.Celsius(v.DesiredFFCTempDelta * 10),
+		ElapsedTimeSinceLastFFC: v.ElapsedTimeSinceLastFFC.Duration(),
+		DesiredFFCPeriod:        v.DesiredFFCPeriod.Duration(),
+		DesiredFFCTempDelta:     v.DesiredFFCTempDelta.Temperature(),
 		ImminentDelay:           v.ImminentDelay,
 		VideoFreezeDuringFFC:    v.VideoFreezeDuringFFC == internal.Enabled,
 		FFCDesired:              v.FFCDesired == internal.Enabled,
@@ -324,7 +333,7 @@ type cciConn struct {
 }
 
 func (c *cciConn) String() string {
-	return fmt.Sprintf("%s", &c.r)
+	return c.r.String()
 }
 
 // waitIdle waits for the busy bit to clear.
@@ -334,7 +343,7 @@ func (c *cciConn) waitIdle() (StatusBit, error) {
 		if s, err := c.r.ReadUint16(regStatus); err != nil || StatusBit(s)&StatusBusy == 0 {
 			return StatusBit(s), err
 		}
-		time.Sleep(5 * time.Millisecond)
+		sleep(5 * time.Millisecond)
 	}
 }
 
@@ -558,6 +567,7 @@ const (
 
 // TODO(maruel): Enable RadXXX commands.
 
+var sleep = time.Sleep
+
 var _ conn.Resource = &Dev{}
-var _ fmt.Stringer = &Dev{}
-var _ fmt.Stringer = &cciConn{}
+var _ physic.SenseEnv = &Dev{}

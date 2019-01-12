@@ -40,7 +40,9 @@ func (s *SmokeTest) Description() string {
 
 // Run implements periph-smoketest.SmokeTest.
 func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
-	f.Parse(args)
+	if err := f.Parse(args); err != nil {
+		return err
+	}
 	if f.NArg() != 0 {
 		f.Usage()
 		return errors.New("unrecognized arguments")
@@ -116,6 +118,10 @@ func testChipGpioNumbers() error {
 		pin := gpioreg.ByName(strconv.Itoa(number))
 		if pin == nil {
 			return fmt.Errorf("could not get gpio pin %d (should be %s)", number, name)
+		}
+		// Resolve the alias if necessary.
+		if r, ok := pin.(gpio.RealPin); ok {
+			pin = r.Real()
 		}
 		if pin.Name() != name {
 			return fmt.Errorf("expected gpio pin %d to be %s but it's %s",

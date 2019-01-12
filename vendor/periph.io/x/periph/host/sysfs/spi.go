@@ -21,6 +21,7 @@ import (
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
 	"periph.io/x/periph/host/fs"
@@ -32,8 +33,13 @@ import (
 //
 // The resulting object is safe for concurrent use.
 //
-// busNumber is the bus number as exported by deffs. For example if the path is
+// busNumber is the bus number as exported by devfs. For example if the path is
 // /dev/spidev0.1, busNumber should be 0 and chipSelect should be 1.
+//
+// It is recommended to use https://periph.io/x/periph/conn/spi/spireg#Open
+// instead of using NewSPI() directly as the package sysfs is providing a
+// Linux-specific implementation. periph.io works on many OSes! This permits
+// it to work on all operating systems, or devices like SPI over USB.
 func NewSPI(busNumber, chipSelect int) (*SPI, error) {
 	if isLinux {
 		return newSPI(busNumber, chipSelect)
@@ -43,23 +49,121 @@ func NewSPI(busNumber, chipSelect int) (*SPI, error) {
 
 // SPI is an open SPI port.
 type SPI struct {
-	// Immutable
-	f          ioctlCloser
-	busNumber  int
-	chipSelect int
-
-	sync.Mutex
-	initialized bool
-	bitsPerWord uint8
-	halfDuplex  bool
-	noCS        bool
-	maxHzPort   uint32
-	maxHzDev    uint32
-	clk         gpio.PinOut
-	mosi        gpio.PinOut
-	miso        gpio.PinIn
-	cs          gpio.PinOut
+	conn spiConn
 }
+
+// Close closes the handle to the SPI driver. It is not a requirement to close
+// before process termination.
+//
+// Note that the object is not reusable afterward.
+func (s *SPI) Close() error {
+	s.conn.mu.Lock()
+	defer s.conn.mu.Unlock()
+	if err := s.conn.f.Close(); err != nil {
+		return fmt.Errorf("sysfs-spi: %v", err)
+	}
+	s.conn.f = nil
+	return nil
+}
+
+func (s *SPI) String() string {
+	return s.conn.String()
+}
+
+// LimitSpeed implements spi.ConnCloser.
+func (s *SPI) LimitSpeed(f physic.Frequency) error {
+	if f > physic.GigaHertz {
+		return fmt.Errorf("sysfs-spi: invalid speed %s; maximum supported clock is 1GHz", f)
+	}
+	if f < 100*physic.Hertz {
+		return fmt.Errorf("sysfs-spi: invalid speed %s; minimum supported clock is 100Hz; did you forget to multiply by physic.MegaHertz?", f)
+	}
+	s.conn.mu.Lock()
+	defer s.conn.mu.Unlock()
+	s.conn.freqPort = f
+	return nil
+}
+
+// Connect implements spi.Port.
+//
+// It must be called before any I/O.
+func (s *SPI) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
+	if f > physic.GigaHertz {
+		return nil, fmt.Errorf("sysfs-spi: invalid speed %s; maximum supported clock is 1GHz", f)
+	}
+	if f < 100*physic.Hertz {
+		return nil, fmt.Errorf("sysfs-spi: invalid speed %s; minimum supported clock is 100Hz; did you forget to multiply by physic.MegaHertz?", f)
+	}
+	if mode&^(spi.Mode3|spi.HalfDuplex|spi.NoCS|spi.LSBFirst) != 0 {
+		return nil, fmt.Errorf("sysfs-spi: invalid mode %v", mode)
+	}
+	if bits < 1 || bits >= 256 {
+		return nil, fmt.Errorf("sysfs-spi: invalid bits %d", bits)
+	}
+	s.conn.mu.Lock()
+	defer s.conn.mu.Unlock()
+	if s.conn.connected {
+		return nil, errors.New("sysfs-spi: Connect() can only be called exactly once")
+	}
+	s.conn.connected = true
+	s.conn.freqConn = f
+	s.conn.bitsPerWord = uint8(bits)
+	// Only mode needs to be set via an IOCTL, others can be specified in the
+	// spiIOCTransfer packet, which saves a kernel call.
+	m := mode & spi.Mode3
+	s.conn.muPins.Lock()
+	{
+		if mode&spi.HalfDuplex != 0 {
+			m |= threeWire
+			s.conn.halfDuplex = true
+			// In case initPins() had been called before Connect().
+			s.conn.mosi = gpio.INVALID
+		}
+		if mode&spi.NoCS != 0 {
+			m |= noCS
+			s.conn.noCS = true
+			// In case initPins() had been called before Connect().
+			s.conn.cs = gpio.INVALID
+		}
+	}
+	s.conn.muPins.Unlock()
+	if mode&spi.LSBFirst != 0 {
+		m |= lSBFirst
+	}
+	// Only the first 8 bits are used. This only works because the system is
+	// running in little endian.
+	if err := s.conn.setFlag(spiIOCMode, uint64(m)); err != nil {
+		return nil, fmt.Errorf("sysfs-spi: setting mode %v failed: %v", mode, err)
+	}
+	return &s.conn, nil
+}
+
+// MaxTxSize implements conn.Limits
+func (s *SPI) MaxTxSize() int {
+	return drvSPI.bufSize
+}
+
+// CLK implements spi.Pins.
+func (s *SPI) CLK() gpio.PinOut {
+	return s.conn.CLK()
+}
+
+// MISO implements spi.Pins.
+func (s *SPI) MISO() gpio.PinIn {
+	return s.conn.MISO()
+}
+
+// MOSI implements spi.Pins.
+func (s *SPI) MOSI() gpio.PinOut {
+	return s.conn.MOSI()
+}
+
+// CS implements spi.Pins.
+func (s *SPI) CS() gpio.PinOut {
+	return s.conn.CS()
+}
+
+// Private details.
 
 func newSPI(busNumber, chipSelect int) (*SPI, error) {
 	if busNumber < 0 || busNumber >= 1<<16 {
@@ -73,279 +177,49 @@ func newSPI(busNumber, chipSelect int) (*SPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sysfs-spi: %v", err)
 	}
-	return &SPI{f: f, busNumber: busNumber, chipSelect: chipSelect}, nil
-}
-
-// Close closes the handle to the SPI driver. It is not a requirement to close
-// before process termination.
-func (s *SPI) Close() error {
-	s.Lock()
-	defer s.Unlock()
-	if err := s.f.Close(); err != nil {
-		return fmt.Errorf("sysfs-spi: %v", err)
-	}
-	return nil
-}
-
-func (s *SPI) String() string {
-	return fmt.Sprintf("SPI%d.%d", s.busNumber, s.chipSelect)
-}
-
-// LimitSpeed implements spi.ConnCloser.
-func (s *SPI) LimitSpeed(maxHz int64) error {
-	if maxHz < 1 || maxHz >= 1<<32 {
-		return fmt.Errorf("sysfs-spi: invalid speed %d", maxHz)
-	}
-	s.Lock()
-	defer s.Unlock()
-	s.maxHzPort = uint32(maxHz)
-	return nil
-}
-
-// Connect implements spi.Port.
-//
-// It must be called before any I/O.
-func (s *SPI) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
-	if maxHz < 0 || maxHz >= 1<<32 {
-		return nil, fmt.Errorf("sysfs-spi: invalid speed %d", maxHz)
-	}
-	if mode&^(spi.Mode3|spi.HalfDuplex|spi.NoCS|spi.LSBFirst) != 0 {
-		return nil, fmt.Errorf("sysfs-spi: invalid mode %v", mode)
-	}
-	if bits < 1 || bits >= 256 {
-		return nil, fmt.Errorf("sysfs-spi: invalid bits %d", bits)
-	}
-	s.Lock()
-	defer s.Unlock()
-	if s.initialized {
-		return nil, errors.New("sysfs-spi: Connect() can only be called exactly once")
-	}
-	s.initialized = true
-	s.maxHzDev = uint32(maxHz)
-	s.bitsPerWord = uint8(bits)
-	// Only mode needs to be set via an IOCTL, others can be specified in the
-	// spiIOCTransfer packet, which saves a kernel call.
-	m := mode & spi.Mode3
-	if mode&spi.HalfDuplex != 0 {
-		m |= threeWire
-		s.halfDuplex = true
-	}
-	if mode&spi.NoCS != 0 {
-		m |= noCS
-		s.noCS = true
-	}
-	if mode&spi.LSBFirst != 0 {
-		m |= lSBFirst
-	}
-	// Only the first 8 bits are used. This only works because the system is
-	// running in little endian.
-	if err := s.setFlag(spiIOCMode, uint64(m)); err != nil {
-		return nil, fmt.Errorf("sysfs-spi: setting mode %v failed: %v", mode, err)
-	}
-	return &spiConn{s}, nil
-}
-
-func (s *SPI) duplex() conn.Duplex {
-	s.Lock()
-	defer s.Unlock()
-	if s.halfDuplex {
-		return conn.Half
-	}
-	return conn.Full
-}
-
-// MaxTxSize implements conn.Limits
-func (s *SPI) MaxTxSize() int {
-	return spiBufSize
-}
-
-// CLK implements spi.Pins.
-func (s *SPI) CLK() gpio.PinOut {
-	s.initPins()
-	return s.clk
-}
-
-// MISO implements spi.Pins.
-func (s *SPI) MISO() gpio.PinIn {
-	s.initPins()
-	return s.miso
-}
-
-// MOSI implements spi.Pins.
-func (s *SPI) MOSI() gpio.PinOut {
-	s.initPins()
-	// TODO(maruel): spi.HalfDuplex.
-	return s.mosi
-}
-
-// CS implements spi.Pins.
-func (s *SPI) CS() gpio.PinOut {
-	s.initPins()
-	// TODO(maruel): spi.NoCS and generally fix properly.
-	return s.cs
-}
-
-// Private details.
-
-func (s *SPI) txInternal(w, r []byte) (int, error) {
-	l := len(w)
-	if l == 0 {
-		l = len(r)
-	}
-	if spiBufSize != 0 && l > spiBufSize {
-		return 0, fmt.Errorf("sysfs-spi: maximum Tx length is %d, got at least %d bytes", spiBufSize, l)
-	}
-
-	s.Lock()
-	defer s.Unlock()
-	if !s.initialized {
-		return 0, errors.New("sysfs-spi: Connect wasn't called")
-	}
-	if len(w) != 0 && len(r) != 0 && s.halfDuplex {
-		return 0, errors.New("sysfs-spi: can only specify one of w or r when in half duplex")
-	}
-	m := spiIOCTransfer{
-		speedHz:     s.maxHzPort,
-		bitsPerWord: s.bitsPerWord,
-	}
-	if s.maxHzDev != 0 && (s.maxHzPort == 0 || s.maxHzDev < s.maxHzPort) {
-		m.speedHz = s.maxHzDev
-	}
-	if l := len(w); l != 0 {
-		m.tx = uint64(uintptr(unsafe.Pointer(&w[0])))
-		m.length = uint32(l)
-	}
-	if l := len(r); l != 0 {
-		m.rx = uint64(uintptr(unsafe.Pointer(&r[0])))
-		m.length = uint32(l)
-	}
-	if err := s.f.Ioctl(spiIOCTx(1), uintptr(unsafe.Pointer(&m))); err != nil {
-		return 0, fmt.Errorf("sysfs-spi: I/O failed: %v", err)
-	}
-	return l, nil
-}
-
-func (s *SPI) txPackets(p []spi.Packet) error {
-	total := 0
-	for i := range p {
-		lW := len(p[i].W)
-		lR := len(p[i].R)
-		if lW != lR && lW != 0 && lR != 0 {
-			return fmt.Errorf("sysfs-spi: when both w and r are used, they must be the same size; got %d and %d bytes", lW, lR)
-		}
-		l := 0
-		if lW != 0 {
-			l = lW
-		}
-		if lR != 0 {
-			l = lR
-		}
-		if total += l; spiBufSize != 0 && total > spiBufSize {
-			return fmt.Errorf("sysfs-spi: maximum TxPackets length is %d, got at least %d bytes", spiBufSize, total)
-		}
-	}
-	if total == 0 {
-		return errors.New("sysfs-spi: empty packets")
-	}
-
-	s.Lock()
-	defer s.Unlock()
-	if !s.initialized {
-		return errors.New("sysfs-spi: Connect wasn't called")
-	}
-	// Convert the packets.
-	speed := s.maxHzPort
-	if s.maxHzDev != 0 && (s.maxHzPort == 0 || s.maxHzDev < s.maxHzPort) {
-		speed = s.maxHzDev
-	}
-	m := make([]spiIOCTransfer, len(p))
-	for i := range m {
-		m[i].speedHz = speed
-		if m[i].bitsPerWord = p[i].BitsPerWord; m[i].bitsPerWord == 0 {
-			m[i].bitsPerWord = s.bitsPerWord
-		}
-		if !s.noCS && !p[i].KeepCS {
-			m[i].csChange = 1
-		}
-		lW := len(p[i].W)
-		lR := len(p[i].R)
-		if lW != 0 && lR != 0 && s.halfDuplex {
-			return errors.New("sysfs-spi: can only specify one of w or r when in half duplex")
-		}
-		if lW != 0 {
-			m[i].tx = uint64(uintptr(unsafe.Pointer(&p[i].W[0])))
-			m[i].length = uint32(lW)
-		}
-		if lR != 0 {
-			m[i].rx = uint64(uintptr(unsafe.Pointer(&p[i].R[0])))
-			m[i].length = uint32(lR)
-		}
-	}
-	if err := s.f.Ioctl(spiIOCTx(len(m)), uintptr(unsafe.Pointer(&m[0]))); err != nil {
-		return fmt.Errorf("sysfs-spi: TxPackets(%d) packets failed: %v", len(m), err)
-	}
-	return nil
-}
-
-func (s *SPI) setFlag(op uint, arg uint64) error {
-	if err := s.f.Ioctl(op|0x40000000, uintptr(unsafe.Pointer(&arg))); err != nil {
-		return err
-	}
-	/*
-		// Verification.
-		actual := uint64(0)
-		// getFlag() equivalent.
-		if err := s.f.Ioctl(op|0x80000000, unsafe.Pointer(&actual)); err != nil {
-			return err
-		}
-		if actual != arg {
-			return fmt.Errorf("sysfs-spi: op 0x%x: set 0x%x, read 0x%x", op, arg, actual)
-		}
-	*/
-	return nil
-}
-
-func (s *SPI) initPins() {
-	s.Lock()
-	isInitialized := s.clk != nil
-	s.Unlock()
-
-	if !isInitialized {
-		clk := gpioreg.ByName(fmt.Sprintf("SPI%d_CLK", s.busNumber))
-		if clk == nil {
-			clk = gpio.INVALID
-		}
-		miso := gpioreg.ByName(fmt.Sprintf("SPI%d_MISO", s.busNumber))
-		if miso == nil {
-			miso = gpio.INVALID
-		}
-		mosi := gpioreg.ByName(fmt.Sprintf("SPI%d_MOSI", s.busNumber))
-		if mosi == nil {
-			mosi = gpio.INVALID
-		}
-		cs := gpioreg.ByName(fmt.Sprintf("SPI%d_CS%d", s.busNumber, s.chipSelect))
-		if cs == nil {
-			cs = gpio.INVALID
-		}
-
-		s.Lock()
-		s.clk = clk
-		s.miso = miso
-		s.mosi = mosi
-		s.cs = cs
-		s.Unlock()
-	}
+	return &SPI{
+		spiConn{
+			name:       fmt.Sprintf("SPI%d.%d", busNumber, chipSelect),
+			f:          f,
+			busNumber:  busNumber,
+			chipSelect: chipSelect,
+		},
+	}, nil
 }
 
 //
 
 // spiConn implements spi.Conn.
 type spiConn struct {
-	s *SPI
+	// Immutable
+	name       string
+	f          ioctlCloser
+	busNumber  int
+	chipSelect int
+
+	mu          sync.Mutex
+	freqPort    physic.Frequency // Frequency specified at LimitSpeed()
+	freqConn    physic.Frequency // Frequency specified at Connect()
+	bitsPerWord uint8
+	connected   bool
+	halfDuplex  bool
+	noCS        bool
+	// Heap optimization: reduce the amount of memory allocations during
+	// transactions.
+	io [4]spiIOCTransfer
+	p  [2]spi.Packet
+
+	// Use a separate lock for the pins, so that they can be queried while a
+	// transaction is happening.
+	muPins sync.Mutex
+	clk    gpio.PinOut
+	mosi   gpio.PinOut
+	miso   gpio.PinIn
+	cs     gpio.PinOut
 }
 
 func (s *spiConn) String() string {
-	return s.s.String()
+	return s.name
 }
 
 // Read implements io.Reader.
@@ -353,7 +227,17 @@ func (s *spiConn) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, errors.New("sysfs-spi: Read() with empty buffer")
 	}
-	return s.s.txInternal(nil, b)
+	if drvSPI.bufSize != 0 && len(b) > drvSPI.bufSize {
+		return 0, fmt.Errorf("sysfs-spi: maximum Read length is %d, got %d bytes", drvSPI.bufSize, len(b))
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.p[0].W = nil
+	s.p[0].R = b
+	if err := s.txPackets(s.p[:1]); err != nil {
+		return 0, fmt.Errorf("sysfs-spi: Read() failed: %v", err)
+	}
+	return len(b), nil
 }
 
 // Write implements io.Writer.
@@ -361,7 +245,17 @@ func (s *spiConn) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, errors.New("sysfs-spi: Write() with empty buffer")
 	}
-	return s.s.txInternal(b, nil)
+	if drvSPI.bufSize != 0 && len(b) > drvSPI.bufSize {
+		return 0, fmt.Errorf("sysfs-spi: maximum Write length is %d, got %d bytes", drvSPI.bufSize, len(b))
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.p[0].W = b
+	s.p[0].R = nil
+	if err := s.txPackets(s.p[:1]); err != nil {
+		return 0, fmt.Errorf("sysfs-spi: Write() failed: %v", err)
+	}
+	return len(b), nil
 }
 
 // Tx sends and receives data simultaneously.
@@ -372,17 +266,40 @@ func (s *spiConn) Write(b []byte) (int, error) {
 // 4096 bytes. See the platform documentation to learn how to increase the
 // limit.
 func (s *spiConn) Tx(w, r []byte) error {
-	if len(w) == 0 {
-		if len(r) == 0 {
-			return errors.New("sysfs-spi: Tx with empty buffers")
+	l := len(w)
+	if l == 0 {
+		if l = len(r); l == 0 {
+			return errors.New("sysfs-spi: Tx() with empty buffers")
 		}
 	} else {
-		if len(r) != 0 && len(w) != len(r) {
-			return errors.New("sysfs-spi: Tx with zero or non-equal length w&r slices")
+		// It's not a big deal to read halfDuplex without the lock.
+		if !s.halfDuplex && len(r) != 0 && len(r) != len(w) {
+			return fmt.Errorf("sysfs-spi: Tx(): when both w and r are used, they must be the same size; got %d and %d bytes", len(w), len(r))
 		}
 	}
-	_, err := s.s.txInternal(w, r)
-	return err
+	if drvSPI.bufSize != 0 && l > drvSPI.bufSize {
+		return fmt.Errorf("sysfs-spi: maximum Tx length is %d, got %d bytes", drvSPI.bufSize, l)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.p[0].W = w
+	s.p[0].R = r
+	p := s.p[:1]
+	if s.halfDuplex && len(w) != 0 && len(r) != 0 {
+		// Create two packets for HalfDuplex operation: one write then one read.
+		s.p[0].R = nil
+		s.p[0].KeepCS = true
+		s.p[1].W = nil
+		s.p[1].R = r
+		s.p[1].KeepCS = false
+		p = s.p[:2]
+	} else {
+		s.p[0].KeepCS = false
+	}
+	if err := s.txPackets(p); err != nil {
+		return fmt.Errorf("sysfs-spi: Tx() failed: %v", err)
+	}
+	return nil
 }
 
 // TxPackets sends and receives packets as specified by the user.
@@ -391,34 +308,152 @@ func (s *spiConn) Tx(w, r []byte) error {
 // 4096 bytes. See the platform documentation to learn how to increase the
 // limit.
 func (s *spiConn) TxPackets(p []spi.Packet) error {
-	return s.s.txPackets(p)
+	total := 0
+	for i := range p {
+		lW := len(p[i].W)
+		lR := len(p[i].R)
+		if lW != lR && lW != 0 && lR != 0 {
+			return fmt.Errorf("sysfs-spi: when both w and r are used, they must be the same size; got %d and %d bytes", lW, lR)
+		}
+		l := lW
+		if l == 0 {
+			l = lR
+		}
+		total += l
+	}
+	if total == 0 {
+		return errors.New("sysfs-spi: empty packets")
+	}
+	if drvSPI.bufSize != 0 && total > drvSPI.bufSize {
+		return fmt.Errorf("sysfs-spi: maximum TxPackets length is %d, got %d bytes", drvSPI.bufSize, total)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.halfDuplex {
+		for i := range p {
+			if len(p[i].W) != 0 && len(p[i].R) != 0 {
+				return errors.New("sysfs-spi: can only specify one of w or r when in half duplex")
+			}
+		}
+	}
+	if err := s.txPackets(p); err != nil {
+		return fmt.Errorf("sysfs-spi: TxPackets() failed: %v", err)
+	}
+	return nil
 }
 
+// Duplex implements conn.Conn.
 func (s *spiConn) Duplex() conn.Duplex {
-	return s.s.duplex()
+	if s.halfDuplex {
+		return conn.Half
+	}
+	return conn.Full
 }
 
+// MaxTxSize implements conn.Limits.
 func (s *spiConn) MaxTxSize() int {
-	return spiBufSize
+	return drvSPI.bufSize
 }
 
+// CLK implements spi.Pins.
 func (s *spiConn) CLK() gpio.PinOut {
-	return s.s.CLK()
+	s.initPins()
+	return s.clk
 }
 
+// MISO implements spi.Pins.
 func (s *spiConn) MISO() gpio.PinIn {
-	return s.s.MISO()
+	s.initPins()
+	return s.miso
 }
 
+// MOSI implements spi.Pins.
 func (s *spiConn) MOSI() gpio.PinOut {
-	return s.s.MOSI()
+	s.initPins()
+	return s.mosi
 }
 
+// CS implements spi.Pins.
 func (s *spiConn) CS() gpio.PinOut {
-	return s.s.CS()
+	s.initPins()
+	return s.cs
 }
 
 //
+
+func (s *spiConn) txPackets(p []spi.Packet) error {
+	// Convert the packets.
+	f := s.freqPort
+	if s.freqConn != 0 && (s.freqPort == 0 || s.freqConn < s.freqPort) {
+		f = s.freqConn
+	}
+	var m []spiIOCTransfer
+	if len(p) > len(s.io) {
+		m = make([]spiIOCTransfer, len(p))
+	} else {
+		m = s.io[:len(p)]
+	}
+	for i := range p {
+		bits := p[i].BitsPerWord
+		if bits == 0 {
+			bits = s.bitsPerWord
+		}
+		csInvert := false
+		if !s.noCS {
+			// Invert CS behavior when a packet has KeepCS false, except for the last
+			// packet when KeepCS is true.
+			last := i == len(p)-1
+			csInvert = p[i].KeepCS == last
+		}
+		m[i].reset(p[i].W, p[i].R, f, bits, csInvert)
+	}
+	return s.f.Ioctl(spiIOCTx(len(m)), uintptr(unsafe.Pointer(&m[0])))
+}
+
+func (s *spiConn) setFlag(op uint, arg uint64) error {
+	if err := s.f.Ioctl(op|0x40000000, uintptr(unsafe.Pointer(&arg))); err != nil {
+		return err
+	}
+	if false {
+		// Verification.
+		actual := uint64(0)
+		// getFlag() equivalent.
+		if err := s.f.Ioctl(op|0x80000000, uintptr(unsafe.Pointer(&actual))); err != nil {
+			return err
+		}
+		if actual != arg {
+			return fmt.Errorf("sysfs-spi: op 0x%x: set 0x%x, read 0x%x", op, arg, actual)
+		}
+	}
+	return nil
+}
+
+func (s *spiConn) initPins() {
+	s.muPins.Lock()
+	defer s.muPins.Unlock()
+	if s.clk != nil {
+		return
+	}
+	if s.clk = gpioreg.ByName(fmt.Sprintf("SPI%d_CLK", s.busNumber)); s.clk == nil {
+		s.clk = gpio.INVALID
+	}
+	if s.miso = gpioreg.ByName(fmt.Sprintf("SPI%d_MISO", s.busNumber)); s.miso == nil {
+		s.miso = gpio.INVALID
+	}
+	// s.mosi is set to INVALID if HalfDuplex was specified.
+	if s.mosi != gpio.INVALID {
+		if s.mosi = gpioreg.ByName(fmt.Sprintf("SPI%d_MOSI", s.busNumber)); s.mosi == nil {
+			s.mosi = gpio.INVALID
+		}
+	}
+	// s.cs is set to INVALID if NoCS was specified.
+	if s.cs != gpio.INVALID {
+		if s.cs = gpioreg.ByName(fmt.Sprintf("SPI%d_CS%d", s.busNumber, s.chipSelect)); s.cs == nil {
+			s.cs = gpio.INVALID
+		}
+	}
+}
 
 const (
 	cSHigh    spi.Mode = 0x4  // CS active high instead of default low (not recommended)
@@ -473,6 +508,9 @@ func spiIOCTx(l int) uint {
 }
 
 // spiIOCTransfer is spi_ioc_transfer in linux/spi/spidev.h.
+//
+// Also documented as struct spi_transfer at
+// https://www.kernel.org/doc/html/latest/driver-api/spi.html
 type spiIOCTransfer struct {
 	tx          uint64 // Pointer to byte slice
 	rx          uint64 // Pointer to byte slice
@@ -486,13 +524,38 @@ type spiIOCTransfer struct {
 	pad         uint16
 }
 
-// spiBufSize is the maximum number of bytes allowed per I/O on the SPI port.
-var spiBufSize = 0
+func (s *spiIOCTransfer) reset(w, r []byte, f physic.Frequency, bitsPerWord uint8, csInvert bool) {
+	s.tx = 0
+	s.rx = 0
+	s.length = 0
+	// w and r must be the same length.
+	if l := len(w); l != 0 {
+		s.tx = uint64(uintptr(unsafe.Pointer(&w[0])))
+		s.length = uint32(l)
+	}
+	if l := len(r); l != 0 {
+		s.rx = uint64(uintptr(unsafe.Pointer(&r[0])))
+		s.length = uint32(l)
+	}
+	s.speedHz = uint32((f + 500*physic.MilliHertz) / physic.Hertz)
+	s.delayUsecs = 0
+	s.bitsPerWord = bitsPerWord
+	if csInvert {
+		s.csChange = 1
+	} else {
+		s.csChange = 0
+	}
+	s.txNBits = 0
+	s.rxNBits = 0
+	s.pad = 0
+}
 
 //
 
 // driverSPI implements periph.Driver.
 type driverSPI struct {
+	// bufSize is the maximum number of bytes allowed per I/O on the SPI port.
+	bufSize int
 }
 
 func (d *driverSPI) String() string {
@@ -500,6 +563,10 @@ func (d *driverSPI) String() string {
 }
 
 func (d *driverSPI) Prerequisites() []string {
+	return nil
+}
+
+func (d *driverSPI) After() []string {
 	return nil
 }
 
@@ -551,7 +618,7 @@ func (d *driverSPI) Init() (bool, error) {
 		return true, err
 	}
 	// Update the global value.
-	spiBufSize, err = strconv.Atoi(strings.TrimSpace(string(b)))
+	drvSPI.bufSize, err = strconv.Atoi(strings.TrimSpace(string(b)))
 	return true, err
 }
 
@@ -566,9 +633,11 @@ func (o *openerSPI) Open() (spi.PortCloser, error) {
 
 func init() {
 	if isLinux {
-		periph.MustRegister(&driverSPI{})
+		periph.MustRegister(&drvSPI)
 	}
 }
+
+var drvSPI driverSPI
 
 var _ conn.Limits = &SPI{}
 var _ conn.Limits = &spiConn{}
@@ -577,5 +646,6 @@ var _ io.Writer = &spiConn{}
 var _ spi.Conn = &spiConn{}
 var _ spi.Pins = &SPI{}
 var _ spi.Pins = &spiConn{}
+var _ spi.Port = &SPI{}
+var _ spi.PortCloser = &SPI{}
 var _ fmt.Stringer = &SPI{}
-var _ fmt.Stringer = &spiConn{}

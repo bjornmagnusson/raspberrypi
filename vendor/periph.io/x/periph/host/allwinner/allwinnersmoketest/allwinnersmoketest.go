@@ -39,7 +39,9 @@ func (s *SmokeTest) Description() string {
 
 // Run implements the SmokeTest interface.
 func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
-	f.Parse(args)
+	if err := f.Parse(args); err != nil {
+		return err
+	}
 	if f.NArg() != 0 {
 		f.Usage()
 		return errors.New("unrecognized arguments")
@@ -61,10 +63,7 @@ func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
 	} else {
 		return errors.New("implement and test for this host")
 	}
-	if err := ensureConnectivity(pwm, other); err != nil {
-		return err
-	}
-	return nil
+	return ensureConnectivity(pwm, other)
 }
 
 // Returns a channel that will return one bool, true if a edge was detected,
@@ -143,8 +142,5 @@ func ensureConnectivity(p1, p2 *loggingPin) error {
 	if err := p1.In(gpio.Float, gpio.NoEdge); err != nil {
 		return err
 	}
-	if err := p2.In(gpio.Float, gpio.NoEdge); err != nil {
-		return err
-	}
-	return nil
+	return p2.In(gpio.Float, gpio.NoEdge)
 }

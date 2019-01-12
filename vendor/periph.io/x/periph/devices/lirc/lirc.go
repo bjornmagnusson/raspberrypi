@@ -14,9 +14,26 @@ import (
 	"strings"
 	"sync"
 
+	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/conn/ir"
 )
+
+// New returns a IR receiver / emitter handle.
+func New() (*Conn, error) {
+	w, err := net.Dial("unix", "/var/run/lirc/lircd")
+	if err != nil {
+		return nil, err
+	}
+	c := &Conn{w: w, c: make(chan ir.Message), list: map[string][]string{}}
+	// Unconditionally retrieve the list of all known keys at start.
+	if _, err := w.Write([]byte("LIST\n")); err != nil {
+		_ = w.Close()
+		return nil, err
+	}
+	go c.loop(bufio.NewReader(w))
+	return c, nil
+}
 
 // Conn is an open port to lirc.
 type Conn struct {
@@ -28,24 +45,16 @@ type Conn struct {
 	pendingList map[string][]string // list of remotes and associated keys being created.
 }
 
-// New returns a IR receiver / emitter handle.
-func New() (*Conn, error) {
-	w, err := net.Dial("unix", "/var/run/lirc/lircd")
-	if err != nil {
-		return nil, err
-	}
-	c := &Conn{w: w, c: make(chan ir.Message), list: map[string][]string{}}
-	// Unconditionally retrieve the list of all known keys at start.
-	if _, err := w.Write([]byte("LIST\n")); err != nil {
-		w.Close()
-		return nil, err
-	}
-	go c.loop(bufio.NewReader(w))
-	return c, nil
-}
-
+// String implements conn.Resource.
 func (c *Conn) String() string {
 	return "lirc"
+}
+
+// Halt implements conn.Resource.
+//
+// It has no effect.
+func (c *Conn) Halt() error {
+	return nil
 }
 
 // Close closes the socket to lirc. It is not a requirement to close before
@@ -264,4 +273,4 @@ func getPins() (int, int) {
 }
 
 var _ ir.Conn = &Conn{}
-var _ fmt.Stringer = &Conn{}
+var _ conn.Resource = &Conn{}

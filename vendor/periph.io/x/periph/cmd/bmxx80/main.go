@@ -17,13 +17,12 @@ import (
 
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/conn/pin/pinreg"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
-	"periph.io/x/periph/devices"
 	"periph.io/x/periph/devices/bmxx80"
-	"periph.io/x/periph/host"
 )
 
 func printPin(fn string, p pin.Pin) {
@@ -35,17 +34,17 @@ func printPin(fn string, p pin.Pin) {
 	}
 }
 
-func printEnv(env *devices.Environment) {
-	if env.Humidity == 0 {
-		fmt.Printf("%8s %10s\n", env.Temperature, env.Pressure)
+func printEnv(e *physic.Env) {
+	if e.Humidity == 0 {
+		fmt.Printf("%8s %10s\n", e.Temperature, e.Pressure)
 	} else {
-		fmt.Printf("%8s %10s %9s\n", env.Temperature, env.Pressure, env.Humidity)
+		fmt.Printf("%8s %10s %9s\n", e.Temperature, e.Pressure, e.Humidity)
 	}
 }
 
-func run(dev devices.Environmental, interval time.Duration) error {
+func run(dev physic.SenseEnv, interval time.Duration) error {
 	if interval == 0 {
-		e := devices.Environment{}
+		e := physic.Env{}
 		if err := dev.Sense(&e); err != nil {
 			return err
 		}
@@ -90,6 +89,9 @@ func mainImpl() error {
 		log.SetOutput(ioutil.Discard)
 	}
 	log.SetFlags(log.Lmicroseconds)
+	if flag.NArg() != 0 {
+		return errors.New("unexpected argument, try -help")
+	}
 
 	s := bmxx80.O4x
 	if *sample1x {
@@ -126,7 +128,7 @@ func mainImpl() error {
 		opts.Filter = bmxx80.F16
 	}
 
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 
@@ -144,7 +146,7 @@ func mainImpl() error {
 			printPin("CS", p.CS())
 		}
 		if *hz != 0 {
-			if err := s.LimitSpeed(int64(*hz)); err != nil {
+			if err := s.LimitSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 				return err
 			}
 		}
@@ -162,7 +164,7 @@ func mainImpl() error {
 			printPin("SDA", p.SDA())
 		}
 		if *hz != 0 {
-			if err := i.SetSpeed(int64(*hz)); err != nil {
+			if err := i.SetSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 				return err
 			}
 		}

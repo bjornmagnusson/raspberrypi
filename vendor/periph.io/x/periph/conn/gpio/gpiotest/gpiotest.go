@@ -8,43 +8,36 @@ package gpiotest
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 )
 
-// Pin implements gpio.Pin.
+// Pin implements gpio.PinIO.
 //
 // Modify its members to simulate hardware events.
 type Pin struct {
-	N   string // Should be immutable
-	Num int    // Should be immutable
-	Fn  string // Should be immutable
+	// These should be immutable.
+	N   string
+	Num int
+	Fn  string // TODO(maruel): pin.Func in v4.
 
-	sync.Mutex            // Grab the Mutex before modifying the members to keep it concurrent safe
-	L          gpio.Level // Used for both input and output
-	P          gpio.Pull
-	EdgesChan  chan gpio.Level // Use it to fake edges
+	// Grab the Mutex before accessing the following members.
+	sync.Mutex
+	L         gpio.Level // Used for both input and output
+	P         gpio.Pull
+	EdgesChan chan gpio.Level  // Use it to fake edges
+	D         gpio.Duty        // PWM duty
+	F         physic.Frequency // PWM period
 }
 
+// String implements conn.Resource.
 func (p *Pin) String() string {
 	return fmt.Sprintf("%s(%d)", p.N, p.Num)
-}
-
-// Name returns the name of the pin.
-func (p *Pin) Name() string {
-	return p.N
-}
-
-// Number returns the pin number.
-func (p *Pin) Number() int {
-	return p.Num
-}
-
-// Function return the value of the Fn field of the pin.
-func (p *Pin) Function() string {
-	return p.Fn
 }
 
 // Halt implements conn.Resource.
@@ -54,7 +47,37 @@ func (p *Pin) Halt() error {
 	return nil
 }
 
-// In is concurrent safe.
+// Name implements pin.Pin.
+func (p *Pin) Name() string {
+	return p.N
+}
+
+// Number implements pin.Pin.
+func (p *Pin) Number() int {
+	return p.Num
+}
+
+// Function implements pin.Pin.
+func (p *Pin) Function() string {
+	return p.Fn
+}
+
+// Func implements pin.PinFunc.
+func (p *Pin) Func() pin.Func {
+	return pin.Func(p.Fn)
+}
+
+// SupportedFuncs implements pin.PinFunc.
+func (p *Pin) SupportedFuncs() []pin.Func {
+	return []pin.Func{gpio.IN, gpio.OUT}
+}
+
+// SetFunc implements pin.PinFunc.
+func (p *Pin) SetFunc(f pin.Func) error {
+	return errors.New("gpiotest: not supported")
+}
+
+// In implements gpio.PinIn.
 func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 	p.Lock()
 	defer p.Unlock()
@@ -77,7 +100,7 @@ func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 	}
 }
 
-// Read is concurrent safe.
+// Read implements gpio.PinIn.
 func (p *Pin) Read() gpio.Level {
 	p.Lock()
 	defer p.Unlock()
@@ -87,14 +110,14 @@ func (p *Pin) Read() gpio.Level {
 // WaitForEdge implements gpio.PinIn.
 func (p *Pin) WaitForEdge(timeout time.Duration) bool {
 	if timeout == -1 {
-		p.Out(<-p.EdgesChan)
+		_ = p.Out(<-p.EdgesChan)
 		return true
 	}
 	select {
 	case <-time.After(timeout):
 		return false
 	case l := <-p.EdgesChan:
-		p.Out(l)
+		_ = p.Out(l)
 		return true
 	}
 }
@@ -104,7 +127,12 @@ func (p *Pin) Pull() gpio.Pull {
 	return p.P
 }
 
-// Out is concurrent safe.
+// DefaultPull implements gpio.PinIn.
+func (p *Pin) DefaultPull() gpio.Pull {
+	return p.P
+}
+
+// Out implements gpio.PinOut.
 func (p *Pin) Out(l gpio.Level) error {
 	p.Lock()
 	defer p.Unlock()
@@ -112,4 +140,57 @@ func (p *Pin) Out(l gpio.Level) error {
 	return nil
 }
 
+// PWM implements gpio.PinOut.
+func (p *Pin) PWM(duty gpio.Duty, f physic.Frequency) error {
+	p.Lock()
+	defer p.Unlock()
+	p.D = duty
+	p.F = f
+	return nil
+}
+
+// LogPinIO logs when its state changes.
+type LogPinIO struct {
+	gpio.PinIO
+}
+
+// Real implements gpio.RealPin.
+func (p *LogPinIO) Real() gpio.PinIO {
+	return p.PinIO
+}
+
+// In implements gpio.PinIn.
+func (p *LogPinIO) In(pull gpio.Pull, edge gpio.Edge) error {
+	log.Printf("%s.In(%s, %s)", p, pull, edge)
+	return p.PinIO.In(pull, edge)
+}
+
+// Read implements gpio.PinIn.
+func (p *LogPinIO) Read() gpio.Level {
+	l := p.PinIO.Read()
+	log.Printf("%s.Read() %s", p, l)
+	return l
+}
+
+// WaitForEdge implements gpio.PinIn.
+func (p *LogPinIO) WaitForEdge(timeout time.Duration) bool {
+	s := time.Now()
+	r := p.PinIO.WaitForEdge(timeout)
+	log.Printf("%s.WaitForEdge(%s) -> %t after %s", p, timeout, r, time.Since(s))
+	return r
+}
+
+// Out implements gpio.PinOut.
+func (p *LogPinIO) Out(l gpio.Level) error {
+	log.Printf("%s.Out(%s)", p, l)
+	return p.PinIO.Out(l)
+}
+
+// PWM implements gpio.PinOut.
+func (p *LogPinIO) PWM(duty gpio.Duty, f physic.Frequency) error {
+	log.Printf("%s.PWM(%s, %s)", p, duty, f)
+	return p.PinIO.PWM(duty, f)
+}
+
 var _ gpio.PinIO = &Pin{}
+var _ pin.PinFunc = &Pin{}

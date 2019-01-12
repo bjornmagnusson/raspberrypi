@@ -2,7 +2,23 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package spi defines the SPI protocol.
+// Package spi defines the API to communicate with devices over the SPI
+// protocol.
+//
+// As described in https://periph.io/x/periph/conn#hdr-Concepts, periph.io uses
+// the concepts of Bus, Port and Conn.
+//
+// In the package spi, 'Bus' is not exposed, as it would be SPI bus number
+// without a CS line, for example on linux asking for "/dev/spi0" without the
+// ".0" suffix.
+//
+// The OS doesn't allow that so it is counter productive to express this at the
+// API layer, so 'Port' is exposed directly instead.
+//
+// Use Port.Connect() converts the uninitialized Port into a Conn.
+//
+// See https://en.wikipedia.org/wiki/Serial_Peripheral_Interface for more
+// information.
 package spi
 
 import (
@@ -11,6 +27,7 @@ import (
 
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
 )
 
 // Mode determines how communication is done.
@@ -84,14 +101,9 @@ type Packet struct {
 	// completed. This can be leveraged to create long transaction as multiple
 	// packets like to use 9 bits commands then 8 bits data.
 	//
-	// Casual observation on a Rasberry Pi 3 is that two packets with
-	// KeepCS:false, there is a few µs with CS asserted after the clock stops,
-	// then 11.2µs with CS not asserted, then CS is asserted for (roughly) one
-	// clock cycle before the clock starts again for the next packet. This seems
-	// to be independent of the port clock speed but this wasn't fully verified.
-	//
-	// It cannot be expected that the driver will correctly keep CS asserted even
-	// if KeepCS:true on the last packet.
+	// Normally during a spi.Conn.TxPackets() call, KeepCS should be set to true
+	// for all packets except the last one. If the last one is set to true, the
+	// CS line stays asserted, leaving the transaction hanging on the bus.
 	//
 	// KeepCS is ignored when NoCS was specified to Connect.
 	KeepCS bool
@@ -99,8 +111,8 @@ type Packet struct {
 
 // Conn defines the interface a concrete SPI driver must implement.
 //
-// It is expected to implement fmt.Stringer and optionally io.Writer and
-// io.Reader.
+// Implementers can optionally implement io.Writer and io.Reader for
+// unidirectional operation.
 type Conn interface {
 	conn.Conn
 	// TxPackets does multiple operations over the SPI connection.
@@ -108,8 +120,14 @@ type Conn interface {
 	// The maximum number of bytes can be limited depending on the driver. Query
 	// conn.Limits.MaxTxSize() can be used to determine the limit.
 	//
-	// If the last packet has KeepCS:true, the behavior is undefined. The CS line
-	// will likely not stay asserted. This is a driver limitation.
+	// If the last packet has KeepCS:true, the CS line stays asserted. This
+	// enables doing SPI transaction over multiple calls.
+	//
+	// Conversely, if any packet beside the last one has KeepCS:false, the CS
+	// line will blip for a short amount of time to force a new transaction.
+	//
+	// It was observed on RPi3 hardware to have a one clock delay between each
+	// packet.
 	TxPackets(p []Packet) error
 }
 
@@ -118,20 +136,21 @@ type Conn interface {
 // The device driver, that is the driver for the peripheral connected over
 // this port, calls Connect() to retrieve a configured connection as Conn.
 type Port interface {
+	String() string
 	// Connect sets the communication parameters of the connection for use by a
 	// device.
 	//
 	// The device driver must call this function exactly once.
 	//
-	// maxHz must specify the maximum rated speed by the device's spec. The lowest
-	// speed between the port speed and the device speed is selected. Use 0 for
-	// maxHz if there is no known maximum value for this device.
+	// f must specify the maximum rated speed by the device's spec. The lowest
+	// speed between the port speed and the device speed is selected. Use 0 for f
+	// if there is no known maximum value for this device.
 	//
 	// mode specifies the clock and signal polarities, if the port is using half
 	// duplex (shared MISO and MOSI) or if CS is not needed.
 	//
 	// bits is the number of bits per word. Generally you should use 8.
-	Connect(maxHz int64, mode Mode, bits int) (Conn, error)
+	Connect(f physic.Frequency, mode Mode, bits int) (Conn, error)
 }
 
 // PortCloser is a SPI port that can be closed.
@@ -147,9 +166,9 @@ type PortCloser interface {
 	// wires are long or the connection is of poor quality.
 	//
 	// This function can be called multiple times and resets the previous value.
-	// 0 is not a value value for maxHz. The lowest speed between the port speed
-	// and the device speed is selected.
-	LimitSpeed(maxHz int64) error
+	// 0 is not a valid value for f. The lowest speed between the port speed and
+	// the device speed is selected.
+	LimitSpeed(f physic.Frequency) error
 }
 
 // Pins defines the pins that a SPI port interconnect is using on the host.

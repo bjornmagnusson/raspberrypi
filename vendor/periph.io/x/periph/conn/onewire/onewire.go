@@ -2,11 +2,20 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package onewire defines a Dallas Semiconductor / Maxim Integrated 1-wire bus.
+// Package onewire defines the API to communicate with devices over the Dallas
+// Semiconductor / Maxim Integrated 1-wire protocol.
 //
-// It includes an adapter to directly address a 1-wire device on a 1-wire bus
-// without having to continuously specify the address when doing I/O. This
-// enables the support of conn.Conn.
+// As described in https://periph.io/x/periph/conn#hdr-Concepts, periph.io uses
+// the concepts of Bus, Port and Conn.
+//
+// In the package onewire, 'Port' is not exposed, since once you know the 1-wire
+// device address, there's no unconfigured Port to configure.
+//
+// Instead, the package includes the adapter 'Dev' to directly convert an 1-wire
+// bus 'onewire.Bus' into a connection 'conn.Conn' by only specifying the device
+// 1-wire address.
+//
+// See https://en.wikipedia.org/wiki/1-Wire for more information.
 //
 // References
 //
@@ -16,9 +25,7 @@
 package onewire
 
 import (
-	"encoding/binary"
-	"fmt"
-	"io"
+	"strconv"
 
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
@@ -30,10 +37,13 @@ import (
 // specified for each transaction. Use onewire.Dev as an adapter to get a
 // conn.Conn compatible object.
 type Bus interface {
+	String() string
 	// Tx performs a bus transaction, sending and receiving bytes, and
 	// ending by pulling the bus high either weakly or strongly depending
-	// on the value of power. A strong pull-up is typically required to
-	// power temperature conversion or EEPROM writes.
+	// on the value of power.
+	//
+	// A strong pull-up is typically required to power temperature conversion or
+	// EEPROM writes.
 	Tx(w, r []byte, power Pullup) error
 
 	// Search performs a "search" cycle on the 1-wire bus and returns the
@@ -50,10 +60,12 @@ type Bus interface {
 	Search(alarmOnly bool) ([]Address, error)
 }
 
-// Address represents a 1-wire device address in little-endian format. This means
-// that the family code ends up in the lower byte, the CRC in the top byte,
-// and the variable address part in the middle 6 bytes. E.g. a DS18B20 device,
-// which has a family code of 0x28, might have address 0x7a00000131825228.
+// Address represents a 1-wire device address in little-endian format.
+//
+// This means that the family code ends up in the lower byte, the CRC in the
+// top byte, and the variable address part in the middle 6 bytes. E.g. a
+// DS18B20 device, which has a family code of 0x28, might have address
+// 0x7a00000131825228.
 type Address uint64
 
 // Pullup encodes the type of pull-up used at the end of a bus transaction.
@@ -78,7 +90,7 @@ func (p Pullup) String() string {
 // It is expected that an implementer of Bus also implement BusCloser, but
 // this is not required.
 type BusCloser interface {
-	io.Closer
+	Close() error
 	Bus
 }
 
@@ -149,7 +161,17 @@ type Dev struct {
 
 // String prints the bus name followed by the device address in parenthesis.
 func (d *Dev) String() string {
-	return fmt.Sprintf("%s(%#016x)", d.Bus, d.Addr)
+	s := "<nil>"
+	if d.Bus != nil {
+		s = d.Bus.String()
+	}
+	a := strconv.FormatUint(uint64(d.Addr), 16)
+	for len(a) < 16 {
+		// O(n²) but since digits is expected to run for a few loops, it doesn't
+		// matter.
+		a = "0" + a
+	}
+	return s + "(0x" + a + ")"
 }
 
 // Tx performs a "match ROM" command on the bus to select the device
@@ -162,7 +184,7 @@ func (d *Dev) Tx(w, r []byte) error {
 	// bytes being written.
 	ww := make([]byte, 9, len(w)+9)
 	ww[0] = 0x55 // Match ROM
-	binary.LittleEndian.PutUint64(ww[1:], uint64(d.Addr))
+	putUint64(ww[1:], d.Addr)
 	ww = append(ww, w...)
 	return d.Bus.Tx(ww, r, WeakPullup)
 }
@@ -183,9 +205,27 @@ func (d *Dev) TxPower(w, r []byte) error {
 	// bytes being written.
 	ww := make([]byte, 9, len(w)+9)
 	ww[0] = 0x55 // Match ROM
-	binary.LittleEndian.PutUint64(ww[1:], uint64(d.Addr))
+	putUint64(ww[1:], d.Addr)
 	ww = append(ww, w...)
 	return d.Bus.Tx(ww, r, StrongPullup)
+}
+
+//
+
+// putUint64 is littleEndian.PutUint64().
+//
+// It was extracted to to not depend on encoding/binary, which depends on
+// reflect.
+func putUint64(b []byte, v Address) {
+	_ = b[7]
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+	b[4] = byte(v >> 32)
+	b[5] = byte(v >> 40)
+	b[6] = byte(v >> 48)
+	b[7] = byte(v >> 56)
 }
 
 // Ensure that the appropriate interfaces are implemented.

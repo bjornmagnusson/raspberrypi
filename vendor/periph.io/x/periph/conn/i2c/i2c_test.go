@@ -7,42 +7,11 @@ package i2c
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"log"
 	"testing"
 
 	"periph.io/x/periph/conn"
+	"periph.io/x/periph/conn/physic"
 )
-
-func ExampleDev() {
-	//b, err := i2creg.Open("")
-	//defer b.Close()
-	var b Bus
-
-	// Dev is a valid conn.Conn.
-	d := &Dev{Addr: 23, Bus: b}
-	var _ conn.Conn = d
-
-	// Send a command and expect a 5 bytes reply.
-	reply := [5]byte{}
-	if err := d.Tx([]byte("A command"), reply[:]); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func ExamplePins() {
-	//b, err := i2creg.Open("")
-	//defer b.Close()
-	var b Bus
-
-	// Prints out the gpio pin used.
-	if p, ok := b.(Pins); ok {
-		fmt.Printf("SDA: %s", p.SDA())
-		fmt.Printf("SCL: %s", p.SCL())
-	}
-}
-
-//
 
 func TestDevString(t *testing.T) {
 	d := Dev{&fakeBus{}, 12}
@@ -109,10 +78,10 @@ func TestDevWriteErr(t *testing.T) {
 //
 
 type fakeBus struct {
-	speed int64
-	err   error
-	addr  uint16
-	w, r  []byte
+	freq physic.Frequency
+	err  error
+	addr uint16
+	w, r []byte
 }
 
 func (f *fakeBus) Close() error {
@@ -131,7 +100,31 @@ func (f *fakeBus) Tx(addr uint16, w, r []byte) error {
 	return f.err
 }
 
-func (f *fakeBus) SetSpeed(hz int64) error {
-	f.speed = hz
+func (f *fakeBus) SetSpeed(freq physic.Frequency) error {
+	f.freq = freq
 	return f.err
+}
+
+func TestAddr_Set(t *testing.T) {
+	tests := []struct {
+		str  string
+		want Addr
+		err  error
+	}{
+		{"0x18", 0x18, nil},
+		{"24", 24, nil},
+		{"0x3ff", 0x3ff, nil},
+		{"0x400", 0, errI2CSetError},
+		{"-1", 0, errI2CSetError},
+	}
+
+	for _, tt := range tests {
+		var a Addr
+		if err := a.Set(tt.str); err != tt.err {
+			t.Errorf("i2cAddr.Set(%s) error %v", tt.str, err)
+		}
+		if tt.err == nil && a != tt.want {
+			t.Errorf("i2cAddr.Set(%s) expected %d but got %d", tt.str, tt.want, a)
+		}
+	}
 }

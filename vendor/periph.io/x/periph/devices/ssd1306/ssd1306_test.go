@@ -5,65 +5,31 @@
 package ssd1306
 
 import (
+	"bytes"
 	"errors"
 	"image"
 	"image/color"
-	"log"
 	"testing"
 
 	"periph.io/x/periph/conn/conntest"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpiotest"
-	"periph.io/x/periph/conn/i2c/i2creg"
 	"periph.io/x/periph/conn/i2c/i2ctest"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spitest"
 	"periph.io/x/periph/devices/ssd1306/image1bit"
 )
 
-func Example() {
-	bus, err := i2creg.Open("")
-	if err != nil {
-		log.Fatalf("failed to open I²C: %v", err)
-	}
-	defer bus.Close()
-	dev, err := NewI2C(bus, 128, 64, false)
-	if err != nil {
-		log.Fatalf("failed to initialize ssd1306: %v", err)
-	}
-
-	// Draw on it.
-	img := image1bit.NewVerticalLSB(dev.Bounds())
-	// Note: this code is commented out so periph does not depend on:
-	//    "golang.org/x/image/font"
-	//    "golang.org/x/image/font/basicfont"
-	//    "golang.org/x/image/math/fixed"
-	//
-	// f := basicfont.Face7x13
-	// drawer := font.Drawer{
-	// 	Dst:  img,
-	// 	Src:  &image.Uniform{image1bit.On},
-	// 	Face: f,
-	// 	Dot:  fixed.P(0, img.Bounds().Dy()-1-f.Descent),
-	// }
-	// drawer.DrawString("Hello from periph!")
-	dev.Draw(dev.Bounds(), img, image.Point{})
-	if err := dev.Err(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-//
-
 func TestNewI2C_fail(t *testing.T) {
 	bus := i2ctest.Playback{DontPanic: true}
-	if d, err := NewI2C(&bus, 0, 64, false); d != nil || err == nil {
+	if d, err := NewI2C(&bus, &Opts{H: 64}); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
-	if d, err := NewI2C(&bus, 64, 0, false); d != nil || err == nil {
+	if d, err := NewI2C(&bus, &Opts{W: 64}); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
-	if d, err := NewI2C(&bus, 64, 64, true); d != nil || err == nil {
+	if d, err := NewI2C(&bus, &Opts{W: 64, H: 64, Rotated: true}); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
 	if err := bus.Close(); err != nil {
@@ -73,7 +39,7 @@ func TestNewI2C_fail(t *testing.T) {
 
 func TestI2C_ColorModel(t *testing.T) {
 	bus := getI2CPlayback()
-	dev, err := NewI2C(bus, 128, 64, false)
+	dev, err := NewI2C(bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +53,7 @@ func TestI2C_ColorModel(t *testing.T) {
 
 func TestI2C_String(t *testing.T) {
 	bus := getI2CPlayback()
-	dev, err := NewI2C(bus, 128, 64, false)
+	dev, err := NewI2C(bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,14 +79,13 @@ func TestI2C_Draw_VerticalLSD_fast(t *testing.T) {
 			{Addr: 0x3c, W: buf},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	img := image1bit.NewVerticalLSB(dev.Bounds())
 	img.Pix[22] = 1
-	dev.Draw(dev.Bounds(), img, image.Point{})
-	if err := dev.Err(); err != nil {
+	if err := dev.Draw(dev.Bounds(), img, image.Point{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := bus.Close(); err != nil {
@@ -145,7 +110,7 @@ func TestI2C_Halt_Write(t *testing.T) {
 			{Addr: 0x3c, W: buf},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +137,7 @@ func TestI2C_Halt_resume_fail(t *testing.T) {
 		},
 		DontPanic: true,
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +159,7 @@ func TestI2C_Write_invalid_size(t *testing.T) {
 			{Addr: 0x3c, W: initCmdI2C()},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +179,7 @@ func TestI2C_Write_fail(t *testing.T) {
 		},
 		DontPanic: true,
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,12 +199,11 @@ func TestI2C_Draw_fail(t *testing.T) {
 		},
 		DontPanic: true,
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{})
-	if err := dev.Err(); !conntest.IsErr(err) {
+	if err := dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{}); !conntest.IsErr(err) {
 		t.Fatalf("expected conntest error: %v", err)
 	}
 	if err := bus.Close(); err != nil {
@@ -256,17 +220,15 @@ func TestI2C_DrawGray(t *testing.T) {
 			{Addr: 0x3c, W: append([]byte{i2cData}, grayCheckboard()...)},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{0, 0})
-	if err := dev.Err(); err != nil {
+	if err := dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{}); err != nil {
 		t.Fatal(err)
 	}
 	// No-op (skip path).
-	dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{0, 0})
-	if err := dev.Err(); err != nil {
+	if err := dev.Draw(dev.Bounds(), makeGrayCheckboard(dev.Bounds()), image.Point{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := bus.Close(); err != nil {
@@ -286,7 +248,7 @@ func TestI2C_Scroll(t *testing.T) {
 			{Addr: 0x3c, W: []byte{0x0, 0x2e}},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +284,7 @@ func TestI2C_SetContrast(t *testing.T) {
 			{Addr: 0x3c, W: []byte{0x0, 0x81, 0xff}},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +314,7 @@ func TestI2C_Invert_Halt_resume(t *testing.T) {
 			{Addr: 0x3c, W: []byte{0x0, 0xaf, 0xa6}},
 		},
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +343,7 @@ func TestI2C_Halt(t *testing.T) {
 		},
 		DontPanic: true,
 	}
-	dev, err := NewI2C(&bus, 128, 64, false)
+	dev, err := NewI2C(&bus, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,23 +361,23 @@ func TestI2C_Halt(t *testing.T) {
 //
 
 func TestNewSPI_fail(t *testing.T) {
-	if d, err := NewSPI(&spitest.Playback{}, nil, 0, 64, false); d != nil || err == nil {
+	if d, err := NewSPI(&spitest.Playback{}, nil, &Opts{H: 64}); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
-	if d, err := NewSPI(&configFail{}, nil, 64, 64, false); d != nil || err == nil {
+	if d, err := NewSPI(&configFail{}, nil, &Opts{W: 64, H: 64}); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
-	if d, err := NewSPI(&spitest.Playback{}, gpio.INVALID, 64, 64, false); d != nil || err == nil {
+	if d, err := NewSPI(&spitest.Playback{}, gpio.INVALID, &DefaultOpts); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
-	if d, err := NewSPI(&spitest.Playback{}, &failPin{fail: true}, 64, 64, false); d != nil || err == nil {
+	if d, err := NewSPI(&spitest.Playback{}, &failPin{fail: true}, &DefaultOpts); d != nil || err == nil {
 		t.Fatal(d, err)
 	}
 }
 
 func TestSPI_3wire(t *testing.T) {
 	// Not supported yet.
-	if dev, err := NewSPI(&spitest.Playback{}, nil, 128, 64, false); dev != nil || err == nil {
+	if dev, err := NewSPI(&spitest.Playback{}, nil, &DefaultOpts); dev != nil || err == nil {
 		t.Fatal("SPI 3-wire is not supported")
 	}
 }
@@ -423,10 +385,10 @@ func TestSPI_3wire(t *testing.T) {
 func TestSPI_4wire_String(t *testing.T) {
 	port := spitest.Playback{
 		Playback: conntest.Playback{
-			Ops: []conntest.IO{{W: getInitCmd(128, 64, false)}},
+			Ops: []conntest.IO{{W: getInitCmd(&Opts{W: 128, H: 64, Rotated: false})}},
 		},
 	}
-	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, 128, 64, false)
+	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +410,7 @@ func TestSPI_4wire_Write_differential(t *testing.T) {
 	port := spitest.Playback{
 		Playback: conntest.Playback{
 			Ops: []conntest.IO{
-				{W: getInitCmd(128, 64, false)},
+				{W: getInitCmd(&Opts{W: 128, H: 64, Rotated: false})},
 				{W: buf1},
 				// Reset to write only to the first page.
 				{W: []byte{0x21, 0x0, 0x7f, 0x22, 0x1, 0x1}},
@@ -456,7 +418,7 @@ func TestSPI_4wire_Write_differential(t *testing.T) {
 			},
 		},
 	}
-	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, 128, 64, false)
+	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,13 +442,13 @@ func TestSPI_4wire_Write_differential_fail(t *testing.T) {
 	port := spitest.Playback{
 		Playback: conntest.Playback{
 			Ops: []conntest.IO{
-				{W: getInitCmd(128, 64, false)},
+				{W: getInitCmd(&Opts{W: 128, H: 64, Rotated: false})},
 				{W: buf1},
 			},
 			DontPanic: true,
 		},
 	}
-	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, 128, 64, false)
+	dev, err := NewSPI(&port, &gpiotest.Pin{N: "pin1", Num: 42}, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,11 +469,11 @@ func TestSPI_4wire_Write_differential_fail(t *testing.T) {
 func TestSPI_4wire_gpio_fail(t *testing.T) {
 	port := spitest.Playback{
 		Playback: conntest.Playback{
-			Ops: []conntest.IO{{W: getInitCmd(128, 64, false)}},
+			Ops: []conntest.IO{{W: getInitCmd(&Opts{W: 128, H: 64, Rotated: false})}},
 		},
 	}
 	pin := &failPin{fail: false}
-	dev, err := NewSPI(&port, pin, 128, 64, false)
+	dev, err := NewSPI(&port, pin, &DefaultOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,10 +490,29 @@ func TestSPI_4wire_gpio_fail(t *testing.T) {
 	}
 }
 
+func TestInitCmd(t *testing.T) {
+	tests := []struct {
+		opts         *Opts
+		wantSubslice []byte
+	}{
+		{opts: &Opts{W: 128, H: 64}, wantSubslice: []byte{0xDA, 0x12}},
+		{opts: &Opts{W: 128, H: 64, Sequential: true}, wantSubslice: []byte{0xDA, 0x02}},
+		{opts: &Opts{W: 128, H: 64, SwapTopBottom: true}, wantSubslice: []byte{0xDA, 0x32}},
+		{opts: &Opts{W: 128, H: 64, Sequential: true, SwapTopBottom: true}, wantSubslice: []byte{0xDA, 0x22}},
+	}
+
+	for _, test := range tests {
+		got := getInitCmd(test.opts)
+		if !bytes.Contains(got, test.wantSubslice) {
+			t.Errorf("getInitCmd(%v) -> %v, want %v", test.opts, got, test.wantSubslice)
+		}
+	}
+}
+
 //
 
 func initCmdI2C() []byte {
-	return append([]byte{0}, getInitCmd(128, 64, false)...)
+	return append([]byte{0}, getInitCmd(&Opts{W: 128, H: 64, Rotated: false})...)
 }
 
 var preludeI2C = []byte{
@@ -576,7 +557,7 @@ type configFail struct {
 	spitest.Record
 }
 
-func (c *configFail) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (c *configFail) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
 	return nil, errors.New("injected error")
 }
 

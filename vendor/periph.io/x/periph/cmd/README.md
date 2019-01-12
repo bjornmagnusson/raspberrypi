@@ -1,8 +1,34 @@
 # periph/cmd - read-to-use executables
 
-This directory contains directly usable tools installable via `go get
-periph.io/x/periph/cmd/...`.
+This directory contains directly usable tools installable via:
 
+```
+go get periph.io/x/periph/cmd/...
+```
+
+Most of the tools can optionally leverage drivers in
+[hostextra](https://periph.io/x/extra/hostextra) when the build tag
+`periphextra` is defined:
+
+```
+go get -u -tags periphextra periph.io/x/periph/cmd/...
+```
+
+This permits taking advantage of drivers like FTDI's
+[D2XX](https://periph.io/x/extra/hostextra/d2xx).
+
+
+## Push
+
+If you prefer to build on your workstation and push the binaries to the micro
+computer, install `push` from [periph.io/x/bootstrap](
+https://github.com/periph/bootstrap) to cross compile and efficiently push via
+rsync:
+
+```
+go get -u periph.io/x/bootstrap/cmd/push
+push -host pi@raspberrypi periph.io/x/periph/cmd/...
+```
 
 ## Recommended first use
 
@@ -20,6 +46,7 @@ it](https://periph.io/project/contributing/).
   Can show an image animating on the Y axis.
 - [bmxx80](bmxx80): Reads the temperature, pressure and humidity off a
   bmp180/bme280/bmp280. Humidity sensing is only supported on bme280.
+- [cap1xxx](cap1xxx): Reads the capacitive sensor family.
 - [ir](ir): Reads codes (button presses) on an InfraRed remote sensor.
 - [led](led): Reads the state of on-board LEDs.
 - [ssd1306](ssd1306): Writes text, an image or an animated GIF to an OLED
@@ -56,5 +83,7 @@ it](https://periph.io/project/contributing/).
 
 ## Troubleshooting
 
-Having getting the tools to run? See [users/](https://periph.io/users/) for more
-documentation.
+Having trouble getting the tools to run? File [an
+issue](https://github.com/google/periph/issues) or better visit the [Slack
+channel](https://gophers.slack.com/messages/periph/). You can get an [invite
+here](https://invite.slack.golangbridge.org/).

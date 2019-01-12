@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
+	"periph.io/x/periph/conn/display"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
-	"periph.io/x/periph/devices"
 	"periph.io/x/periph/devices/apa102"
-	"periph.io/x/periph/host"
 )
 
 func access(name string) bool {
@@ -83,8 +83,8 @@ func resize(src image.Image, width, height int) *image.NRGBA {
 	return dst
 }
 
-func showImage(display devices.Display, img image.Image, sleep time.Duration, loop bool, height int) {
-	r := display.Bounds()
+func showImage(disp display.Drawer, img image.Image, sleep time.Duration, loop bool, height int) {
+	r := disp.Bounds()
 	w := r.Dx()
 	orig := img.Bounds().Size()
 	if height == 0 {
@@ -98,7 +98,10 @@ func showImage(display devices.Display, img image.Image, sleep time.Duration, lo
 	for {
 		for p.Y = 0; p.Y < height; p.Y++ {
 			c := time.After(sleep)
-			display.Draw(r, img, p)
+			if err := disp.Draw(disp.Bounds(), img, image.Point{}); err != nil {
+				log.Printf("error drawing: %v", err)
+				return
+			}
 			if p.Y == height-1 && !loop {
 				log.Printf("done %s", time.Since(now))
 				return
@@ -112,9 +115,10 @@ func mainImpl() error {
 	verbose := flag.Bool("v", false, "verbose mode")
 	spiID := flag.String("spi", "", "SPI port to use")
 
-	numPixels := flag.Int("n", 150, "number of pixels on the strip")
-	intensity := flag.Int("l", 127, "light intensity [1-255]")
-	temperature := flag.Int("t", 5000, "light temperature in °Kelvin [3500-7500]")
+	numPixels := flag.Int("n", apa102.DefaultOpts.NumPixels, "number of pixels on the strip")
+	intensity := flag.Int("l", int(apa102.DefaultOpts.Intensity), "light intensity [1-255]; 255 is full intensity")
+	temperature := flag.Int("t", int(apa102.DefaultOpts.Temperature), "light temperature in Kelvin [3500-7500]; 6500 is neutral")
+	globalPWM := flag.Bool("g", false, "disable the global PWM and perceptual mapping")
 	hz := flag.Int("hz", 0, "SPI port speed")
 	color := flag.String("color", "208020", "hex encoded color to show")
 	imgName := flag.String("img", "", "image to load")
@@ -135,7 +139,7 @@ func mainImpl() error {
 	if *temperature > 65535 {
 		return errors.New("max temperature is 65535")
 	}
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 
@@ -146,7 +150,7 @@ func mainImpl() error {
 	}
 	defer s.Close()
 	if *hz != 0 {
-		if err := s.LimitSpeed(int64(*hz)); err != nil {
+		if err := s.LimitSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 			return err
 		}
 	}
@@ -154,7 +158,12 @@ func mainImpl() error {
 		// TODO(maruel): Print where the pins are located.
 		log.Printf("Using pins CLK: %s  MOSI: %s  MISO: %s", p.CLK(), p.MOSI(), p.MISO())
 	}
-	display, err := apa102.New(s, *numPixels, uint8(*intensity), uint16(*temperature))
+	o := apa102.DefaultOpts
+	o.NumPixels = *numPixels
+	o.Intensity = uint8(*intensity)
+	o.Temperature = uint16(*temperature)
+	o.DisableGlobalPWM = *globalPWM
+	disp, err := apa102.New(s, &o)
 	if err != nil {
 		return err
 	}
@@ -165,7 +174,7 @@ func mainImpl() error {
 		if err != nil {
 			return err
 		}
-		showImage(display, img, time.Duration(*lineMs)*time.Millisecond, *imgLoop, *imgHeight)
+		showImage(disp, img, time.Duration(*lineMs)*time.Millisecond, *imgLoop, *imgHeight)
 		return nil
 	}
 
@@ -183,7 +192,7 @@ func mainImpl() error {
 		buf[i+1] = g
 		buf[i+2] = b
 	}
-	_, err = display.Write(buf)
+	_, err = disp.Write(buf)
 	return err
 }
 

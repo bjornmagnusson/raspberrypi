@@ -62,7 +62,9 @@ func (s *SmokeTest) Run(f *flag.FlagSet, args []string) (err error) {
 	rotated := f.Bool("rotated", false, "Rotate the displays by 180°")
 
 	record := f.Bool("record", false, "record operation (for playback unit testing)")
-	f.Parse(args)
+	if err := f.Parse(args); err != nil {
+		return err
+	}
 	if f.NArg() != 0 {
 		f.Usage()
 		return errors.New("unrecognized arguments")
@@ -92,13 +94,14 @@ func (s *SmokeTest) Run(f *flag.FlagSet, args []string) (err error) {
 	if len(*dcName) != 0 {
 		dc = gpioreg.ByName(*dcName)
 	}
+	opts := ssd1306.Opts{W: *w, H: *h, Rotated: *rotated}
 	if !*record {
-		return s.run(i2cBus, spiPort, dc, *w, *h, *rotated)
+		return s.run(i2cBus, spiPort, dc, &opts)
 	}
 
 	i2cRecorder := i2ctest.Record{Bus: i2cBus}
 	spiRecorder := spitest.Record{Port: spiPort}
-	err = s.run(&i2cRecorder, &spiRecorder, dc, *w, *h, *rotated)
+	err = s.run(&i2cRecorder, &spiRecorder, dc, &opts)
 	if len(i2cRecorder.Ops) != 0 {
 		fmt.Printf("I²C recorder Addr: 0x%02X\n", i2cRecorder.Ops[0].Addr)
 	} else {
@@ -149,16 +152,16 @@ func (s *SmokeTest) Run(f *flag.FlagSet, args []string) (err error) {
 	return err
 }
 
-func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, w, h int, rotated bool) (err error) {
+func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, opts *ssd1306.Opts) (err error) {
 	s.timings = make([]time.Duration, 2)
 	start := time.Now()
-	i2cDev, err2 := ssd1306.NewI2C(i2cBus, w, h, rotated)
+	i2cDev, err2 := ssd1306.NewI2C(i2cBus, opts)
 	s.timings[0] = time.Since(start)
 	if err2 != nil {
 		return err2
 	}
 	start = time.Now()
-	spiDev, err2 := ssd1306.NewSPI(spiPort, dc, w, h, rotated)
+	spiDev, err2 := ssd1306.NewSPI(spiPort, dc, opts)
 	s.timings[1] = time.Since(start)
 	if err2 != nil {
 		return err2
@@ -179,8 +182,8 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 	// Right format, right size
 	imgBunny1bitLarge := image1bit.NewVerticalLSB(i2cDev.Bounds())
 	center := imgBunny1bit.Bounds()
-	draw.Src.Draw(imgBunny1bitLarge, center.Add(image.Point{X: (w - center.Dx()) / 2}), imgBunny1bit, image.Point{})
-	imgClear := make([]byte, w*h/8)
+	draw.Src.Draw(imgBunny1bitLarge, center.Add(image.Point{X: (opts.W - center.Dx()) / 2}), imgBunny1bit, image.Point{})
+	imgClear := make([]byte, opts.W*opts.H/8)
 
 	for i, d := range s.devices {
 		start := time.Now()
@@ -193,8 +196,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 
 	for i, d := range s.devices {
 		start := time.Now()
-		d.Draw(d.Bounds(), imgBunnyNRGBA, image.Point{})
-		if err := d.Err(); err != nil {
+		if err := d.Draw(d.Bounds(), imgBunnyNRGBA, image.Point{}); err != nil {
 			return err
 		}
 		s.timings[i] = time.Since(start)
@@ -203,8 +205,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 
 	for i, d := range s.devices {
 		start := time.Now()
-		d.Draw(d.Bounds(), imgBunny1bitLarge, image.Point{})
-		if err := d.Err(); err != nil {
+		if err := d.Draw(d.Bounds(), imgBunny1bitLarge, image.Point{}); err != nil {
 			return err
 		}
 		s.timings[i] = time.Since(start)
@@ -213,8 +214,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 
 	for i, d := range s.devices {
 		start := time.Now()
-		d.Draw(d.Bounds(), imgBunny1bit, image.Point{})
-		if err := d.Err(); err != nil {
+		if err := d.Draw(d.Bounds(), imgBunny1bit, image.Point{}); err != nil {
 			return err
 		}
 		s.timings[i] = time.Since(start)
@@ -286,8 +286,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 
 	for i, d := range s.devices {
 		start := time.Now()
-		d.Draw(d.Bounds(), imgBunny1bitLarge, image.Point{})
-		if err := d.Err(); err != nil {
+		if err := d.Draw(d.Bounds(), imgBunny1bitLarge, image.Point{}); err != nil {
 			return err
 		}
 		s.timings[i] = time.Since(start)
@@ -330,7 +329,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 	}
 	s.step("Restore")
 
-	imgStripes := broadStripes(w, h)
+	imgStripes := broadStripes(opts.W, opts.H)
 	for i, d := range s.devices {
 		start := time.Now()
 		if _, err := d.Write(imgStripes); err != nil {
@@ -376,7 +375,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 	}
 	s.printStr("Clear (redundant)")
 
-	imgPattern := binaryPattern(w, h)
+	imgPattern := binaryPattern(opts.W, opts.H)
 	for i, d := range s.devices {
 		start := time.Now()
 		if _, err := d.Write(imgPattern); err != nil {
@@ -386,7 +385,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 	}
 	s.step("Fill display with binary 0..255 pattern")
 
-	imgPattern[w+h/2] ^= 0x10
+	imgPattern[opts.W+opts.H/2] ^= 0x10
 	for i, d := range s.devices {
 		start := time.Now()
 		if _, err := d.Write(imgPattern); err != nil {
@@ -403,8 +402,7 @@ func (s *SmokeTest) run(i2cBus i2c.Bus, spiPort spi.PortCloser, dc gpio.PinOut, 
 	draw.DrawMask(bmp, r, &image.Uniform{C: image1bit.On}, image.Point{}, &periphImg, image.Point{}, draw.Over)
 	for i, d := range s.devices {
 		start := time.Now()
-		d.Draw(d.Bounds(), bmp, image.Point{})
-		if err := d.Err(); err != nil {
+		if err := d.Draw(d.Bounds(), bmp, image.Point{}); err != nil {
 			return err
 		}
 		s.timings[i] = time.Since(start)

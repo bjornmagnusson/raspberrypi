@@ -5,25 +5,11 @@
 package sysfs
 
 import (
-	"log"
 	"testing"
 
 	"periph.io/x/periph/conn/i2c/i2creg"
+	"periph.io/x/periph/conn/physic"
 )
-
-func ExampleNewI2C() {
-	b, err := NewI2C(1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer b.Close()
-
-	if err := b.Tx(23, []byte{0x10}, nil); err != nil {
-		log.Fatal(err)
-	}
-}
-
-//
 
 func TestNewI2C(t *testing.T) {
 	if b, err := NewI2C(-1); b != nil || err == nil {
@@ -37,14 +23,27 @@ func TestI2C_faked(t *testing.T) {
 	if s := bus.String(); s != "I2C24" {
 		t.Fatal(s)
 	}
-	// These will all fail, need to mock ioctl.
-	bus.Tx(0x401, nil, nil)
-	bus.Tx(1, nil, nil)
-	bus.Tx(1, []byte{0}, nil)
-	bus.Tx(1, nil, []byte{0})
-	bus.Tx(1, []byte{0}, []byte{0})
-	bus.SetSpeed(0)
-	bus.SetSpeed(1)
+	if bus.Tx(0x401, nil, nil) == nil {
+		t.Fatal("empty Tx")
+	}
+	if err := bus.Tx(1, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Tx(1, []byte{0}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Tx(1, nil, []byte{0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Tx(1, []byte{0}, []byte{0}); err != nil {
+		t.Fatal(err)
+	}
+	if bus.SetSpeed(0) == nil {
+		t.Fatal("0 is invalid")
+	}
+	if bus.SetSpeed(physic.Hertz) == nil {
+		t.Fatal("can't set speed")
+	}
 	bus.SCL()
 	bus.SDA()
 	if err := bus.Close(); err != nil {
@@ -74,28 +73,44 @@ func TestDriver_Init(t *testing.T) {
 			// It may fail due to ACL.
 			b, _ := i2creg.Open("")
 			if b != nil {
-				b.Close()
+				// If opening succeeded, closing must always succeed.
+				if err := b.Close(); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 	}
 	if d.Prerequisites() != nil {
 		t.Fatal("unexpected prerequisite")
 	}
-	i2cMu.Lock()
-	i2cMu.Unlock()
-	if setSpeed != nil {
+	drvI2C.mu.Lock()
+	drvI2C.mu.Unlock()
+	if drvI2C.setSpeed != nil {
 		t.Fatal("unexpected setSpeed")
 	}
 	defer func() {
-		setSpeed = nil
+		drvI2C.setSpeed = nil
 	}()
-	if SetSpeedHook(nil) == nil {
+	if I2CSetSpeedHook(nil) == nil {
 		t.Fatal("must fail on nil hook")
 	}
-	if err := SetSpeedHook(func(hz int64) error { return nil }); err != nil {
+	if err := I2CSetSpeedHook(func(f physic.Frequency) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if SetSpeedHook(func(hz int64) error { return nil }) == nil {
-		t.Fatal("second SetSpeedHook must fail")
+	if I2CSetSpeedHook(func(f physic.Frequency) error { return nil }) == nil {
+		t.Fatal("second I2CSetSpeedHook must fail")
+	}
+}
+
+func BenchmarkI2C(b *testing.B) {
+	b.ReportAllocs()
+	i := ioctlClose{}
+	bus := I2C{f: &i}
+	var w [16]byte
+	var r [16]byte
+	for i := 0; i < b.N; i++ {
+		if err := bus.Tx(0x01, w[:], r[:]); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

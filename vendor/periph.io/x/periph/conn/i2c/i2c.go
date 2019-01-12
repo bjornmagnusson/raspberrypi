@@ -2,19 +2,30 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package i2c defines interface to an I²C bus and an I²C device.
+// Package i2c defines the API to communicate with devices over the I²C
+// protocol.
 //
-// It includes the adapter Dev to directly address an I²C device on a I²C bus
-// without having to continuously specify the address when doing I/O. This
-// enables the support of conn.Conn.
+// As described in https://periph.io/x/periph/conn#hdr-Concepts, periph.io uses
+// the concepts of Bus, Port and Conn.
+//
+// In the package i2c, 'Port' is not exposed, since once you know the I²C
+// device address, there's no unconfigured Port to configure.
+//
+// Instead, the package includes the adapter 'Dev' to directly convert an I²C
+// bus 'i2c.Bus' into a connection 'conn.Conn' by only specifying the device
+// I²C address.
+//
+// See https://en.wikipedia.org/wiki/I%C2%B2C for more information.
 package i2c
 
 import (
-	"fmt"
+	"errors"
 	"io"
+	"strconv"
 
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
 )
 
 // Bus defines the interface a concrete I²C driver must implement.
@@ -25,12 +36,17 @@ import (
 // specified. Use i2cdev.Dev as an adapter to get a conn.Conn compatible
 // object.
 type Bus interface {
+	String() string
+	// Tx does a transaction at the specified device address.
+	//
+	// Write is done first, then read. One of 'w' or 'r' can be omitted for a
+	// unidirectional operation.
 	Tx(addr uint16, w, r []byte) error
 	// SetSpeed changes the bus speed, if supported.
 	//
 	// On linux due to the way the I²C sysfs driver is exposed in userland,
 	// calling this function will likely affect *all* I²C buses on the host.
-	SetSpeed(hz int64) error
+	SetSpeed(f physic.Frequency) error
 }
 
 // BusCloser is an I²C bus that can be closed.
@@ -65,7 +81,11 @@ type Dev struct {
 }
 
 func (d *Dev) String() string {
-	return fmt.Sprintf("%s(%d)", d.Bus, d.Addr)
+	s := "<nil>"
+	if d.Bus != nil {
+		s = d.Bus.String()
+	}
+	return s + "(" + strconv.Itoa(int(d.Addr)) + ")"
 }
 
 // Tx does a transaction by adding the device's address to each command.
@@ -90,6 +110,21 @@ func (d *Dev) Duplex() conn.Duplex {
 	return conn.Half
 }
 
-//
+// Addr is an I²C slave address.
+type Addr uint16
+
+// Set sets the Addr to a value represented by the string s. Values maybe in
+// decimal or hexadecimal form. Set implements the flag.Value interface.
+func (a *Addr) Set(s string) error {
+	// Allow for only maximum of 10 bits for i2c addresses.
+	u, err := strconv.ParseUint(s, 0, 10)
+	if err != nil {
+		return errI2CSetError
+	}
+	*a = Addr(u)
+	return nil
+}
+
+var errI2CSetError = errors.New("invalid i2c address")
 
 var _ conn.Conn = &Dev{}

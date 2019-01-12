@@ -15,10 +15,13 @@ import (
 	"time"
 
 	"periph.io/x/periph"
-	"periph.io/x/periph/devices"
+	"periph.io/x/periph/conn"
+	"periph.io/x/periph/conn/physic"
 )
 
-// ThermalSensors is all the sensors discovered on this host via sysfs.
+// ThermalSensors is all the sensors discovered on this host via sysfs.  It
+// includes 'thermal' devices as well as temperature 'hwmon' devices, so
+// pre-configured onewire temperature sensors will be discovered automatically.
 var ThermalSensors []*ThermalSensor
 
 // ThermalSensorByName returns a *ThermalSensor for the sensor name, if any.
@@ -38,12 +41,15 @@ func ThermalSensorByName(name string) (*ThermalSensor, error) {
 
 // ThermalSensor represents one thermal sensor on the system.
 type ThermalSensor struct {
-	name string
-	root string
+	name           string
+	root           string
+	sensorFilename string
+	typeFilename   string
 
-	mu       sync.Mutex
-	nameType string
-	f        fileIO
+	mu        sync.Mutex
+	nameType  string
+	f         fileIO
+	precision physic.Temperature
 }
 
 func (t *ThermalSensor) String() string {
@@ -60,27 +66,37 @@ func (t *ThermalSensor) Type() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.nameType == "" {
-		f, err := fileIOOpen(t.root+"type", os.O_RDONLY)
+		nameType, err := t.readType()
 		if err != nil {
-			return fmt.Sprintf("sysfs-thermal: %v", err)
+			return err.Error()
 		}
-		defer f.Close()
-		var buf [256]byte
-		n, err := f.Read(buf[:])
-		if err != nil {
-			return fmt.Sprintf("sysfs-thermal: %v", err)
-		}
-		if n < 2 {
-			t.nameType = "<unknown>"
-		} else {
-			t.nameType = string(buf[:n-1])
-		}
+		t.nameType = nameType
 	}
 	return t.nameType
 }
 
-// Sense implements devices.Environmental.
-func (t *ThermalSensor) Sense(env *devices.Environment) error {
+func (t *ThermalSensor) readType() (string, error) {
+	f, err := fileIOOpen(t.root+t.typeFilename, os.O_RDONLY)
+	if os.IsNotExist(err) {
+		return "<unknown>", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("sysfs-thermal: %v", err)
+	}
+	defer f.Close()
+	var buf [256]byte
+	n, err := f.Read(buf[:])
+	if err != nil {
+		return "", fmt.Errorf("sysfs-thermal: %v", err)
+	}
+	if n < 2 {
+		return "<unknown>", nil
+	}
+	return string(buf[:n-1]), nil
+}
+
+// Sense implements physic.SenseEnv.
+func (t *ThermalSensor) Sense(e *physic.Env) error {
 	if err := t.open(); err != nil {
 		return err
 	}
@@ -98,17 +114,32 @@ func (t *ThermalSensor) Sense(env *devices.Environment) error {
 	if err != nil {
 		return fmt.Errorf("sysfs-thermal: %v", err)
 	}
-	if i < 100 {
-		i *= 1000
+	if t.precision == 0 {
+		t.precision = physic.MilliKelvin
+		if i < 100 {
+			t.precision *= 1000
+		}
 	}
-	env.Temperature = devices.Celsius(i)
+	e.Temperature = physic.Temperature(i)*t.precision + physic.ZeroCelsius
 	return nil
 }
 
-// SenseContinuous implements devices.Environmental.
-func (t *ThermalSensor) SenseContinuous(interval time.Duration) (<-chan devices.Environment, error) {
+// SenseContinuous implements physic.SenseEnv.
+func (t *ThermalSensor) SenseContinuous(interval time.Duration) (<-chan physic.Env, error) {
 	// TODO(maruel): Manually poll in a loop via time.NewTicker.
 	return nil, errors.New("sysfs-thermal: not implemented")
+}
+
+// Precision implements physic.SenseEnv.
+func (t *ThermalSensor) Precision(e *physic.Env) {
+	if t.precision == 0 {
+		dummy := physic.Env{}
+		// Ignore the error.
+		_ = t.Sense(&dummy)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e.Temperature = t.precision
 }
 
 //
@@ -119,7 +150,7 @@ func (t *ThermalSensor) open() error {
 	if t.f != nil {
 		return nil
 	}
-	f, err := fileIOOpen(t.root+"temp", os.O_RDONLY)
+	f, err := fileIOOpen(t.root+t.sensorFilename, os.O_RDONLY)
 	if err != nil {
 		return fmt.Errorf("sysfs-thermal: %v", err)
 	}
@@ -139,6 +170,10 @@ func (d *driverThermalSensor) Prerequisites() []string {
 	return nil
 }
 
+func (d *driverThermalSensor) After() []string {
+	return nil
+}
+
 // Init initializes thermal sysfs handling code.
 //
 // Uses sysfs as described* at
@@ -146,31 +181,48 @@ func (d *driverThermalSensor) Prerequisites() []string {
 //
 // * for the most minimalistic meaning of 'described'.
 func (d *driverThermalSensor) Init() (bool, error) {
-	// This driver is only registered on linux, so there is no legitimate time to
-	// skip it.
-	items, err := filepath.Glob("/sys/class/thermal/*/temp")
-	if err != nil {
+	if err := d.discoverDevices("/sys/class/thermal/*/temp", "type"); err != nil {
 		return true, err
 	}
-	if len(items) == 0 {
+	if err := d.discoverDevices("/sys/class/hwmon/*/temp*_input", "device/name"); err != nil {
+		return true, err
+	}
+	if len(ThermalSensors) == 0 {
 		return false, errors.New("sysfs-thermal: no sensor found")
+	}
+	return true, nil
+}
+
+func (d *driverThermalSensor) discoverDevices(glob, typeFilename string) error {
+	// This driver is only registered on linux, so there is no legitimate time to
+	// skip it.
+	items, err := filepath.Glob(glob)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
 	}
 	sort.Strings(items)
 	for _, item := range items {
 		base := filepath.Dir(item)
 		ThermalSensors = append(ThermalSensors, &ThermalSensor{
-			name: filepath.Base(base),
-			root: base + "/",
+			name:           filepath.Base(base),
+			root:           base + "/",
+			sensorFilename: filepath.Base(item),
+			typeFilename:   typeFilename,
 		})
 	}
-	return true, nil
+	return nil
 }
 
 func init() {
 	if isLinux {
-		periph.MustRegister(&driverThermalSensor{})
+		periph.MustRegister(&drvThermalSensor)
 	}
 }
 
-var _ devices.Environmental = &ThermalSensor{}
-var _ fmt.Stringer = &ThermalSensor{}
+var drvThermalSensor driverThermalSensor
+
+var _ conn.Resource = &ThermalSensor{}
+var _ physic.SenseEnv = &ThermalSensor{}

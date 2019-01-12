@@ -19,6 +19,8 @@ import (
 	"periph.io/x/periph"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/host/pmem"
 	"periph.io/x/periph/host/sysfs"
 )
@@ -33,13 +35,15 @@ import (
 //
 // So make sure to read the datasheet for the exact right CPU.
 var (
-	PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB11, PB12, PB13, PB14, PB15, PB16, PB17, PB18                                                       *Pin
-	PC0, PC1, PC2, PC3, PC4, PC5, PC6, PC7, PC8, PC9, PC10, PC11, PC12, PC13, PC14, PC15, PC16, PC17, PC18, PC19                                                 *Pin
+	PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7, PA8, PA9, PA10, PA11, PA12, PA13, PA14, PA15, PA16, PA17                                                             *Pin
+	PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB11, PB12, PB13, PB14, PB15, PB16, PB17, PB18, PB19, PB20, PB21, PB22, PB23                         *Pin
+	PC0, PC1, PC2, PC3, PC4, PC5, PC6, PC7, PC8, PC9, PC10, PC11, PC12, PC13, PC14, PC15, PC16, PC17, PC18, PC19, PC20, PC21, PC22, PC23, PC24                   *Pin
 	PD0, PD1, PD2, PD3, PD4, PD5, PD6, PD7, PD8, PD9, PD10, PD11, PD12, PD13, PD14, PD15, PD16, PD17, PD18, PD19, PD20, PD21, PD22, PD23, PD24, PD25, PD26, PD27 *Pin
 	PE0, PE1, PE2, PE3, PE4, PE5, PE6, PE7, PE8, PE9, PE10, PE11, PE12, PE13, PE14, PE15, PE16, PE17                                                             *Pin
 	PF0, PF1, PF2, PF3, PF4, PF5, PF6                                                                                                                            *Pin
 	PG0, PG1, PG2, PG3, PG4, PG5, PG6, PG7, PG8, PG9, PG10, PG11, PG12, PG13                                                                                     *Pin
-	PH0, PH1, PH2, PH3, PH4, PH5, PH6, PH7, PH8, PH9, PH10, PH11                                                                                                 *Pin
+	PH0, PH1, PH2, PH3, PH4, PH5, PH6, PH7, PH8, PH9, PH10, PH11, PH12, PH13, PH14, PH15, PH16, PH17, PH18, PH19, PH20, PH21, PH22, PH23, PH24, PH25, PH26, PH27 *Pin
+	PI0, PI1, PI2, PI3, PI4, PI5, PI6, PI7, PI8, PI9, PI10, PI11, PI12, PI13, PI14, PI15, PI16, PI17, PI18, PI19, PI20, PI21                                     *Pin
 )
 
 // Pin implements the gpio.PinIO interface for generic Allwinner CPU pins using
@@ -50,70 +54,22 @@ type Pin struct {
 	offset      uint8     // as per register offset calculation
 	name        string    // name as per datasheet
 	defaultPull gpio.Pull // default pull at startup
-	altFunc     [5]string // alternate functions
+
+	// Immutable after driver initialization.
+	altFunc     [5]pin.Func // alternate functions
+	sysfsPin    *sysfs.Pin  // Set to the corresponding sysfs.Pin, if any.
+	available   bool        // Set when the pin is available on this CPU architecture.
+	supportEdge bool        // Set when the pin supports interrupt based edge detection.
 
 	// Mutable.
-	edge        *sysfs.Pin // Set once, then never set back to nil.
-	usingEdge   bool       // Set when edge detection is enabled.
-	available   bool       // Set when the pin is available on this CPU architecture.
-	supportEdge bool       // Set when the pin supports interrupt based edge detection.
+	usingEdge bool // Set when edge detection is enabled.
 }
 
-// String returns the name of the pin in the processor and the GPIO pin number.
+// String implements conn.Resource.
+//
+// It returns the pin name and number, ex: "PB5(37)".
 func (p *Pin) String() string {
 	return fmt.Sprintf("%s(%d)", p.name, p.Number())
-}
-
-// Name returns the pin name.
-func (p *Pin) Name() string {
-	return p.name
-}
-
-// Number returns the GPIO pin number as represented by gpio sysfs.
-func (p *Pin) Number() int {
-	return int(p.group)*32 + int(p.offset)
-}
-
-// Function returns the current function of the pin in printable form.
-func (p *Pin) Function() string {
-	if !p.available {
-		return "N/A"
-	}
-	switch f := p.function(); f {
-	case in:
-		return "In/" + p.Read().String() + "/" + p.Pull().String()
-	case out:
-		return "Out/" + p.Read().String()
-	case alt1:
-		if p.altFunc[0] != "" {
-			return p.altFunc[0]
-		}
-		return "<Alt1>"
-	case alt2:
-		if p.altFunc[1] != "" {
-			return p.altFunc[1]
-		}
-		return "<Alt2>"
-	case alt3:
-		if p.altFunc[2] != "" {
-			return p.altFunc[2]
-		}
-		return "<Alt3>"
-	case alt4:
-		if p.altFunc[3] != "" {
-			return p.altFunc[3]
-		}
-		return "<Alt4>"
-	case alt5:
-		if p.altFunc[4] != "" {
-			return p.altFunc[4]
-		}
-		return "<Alt5>"
-	case disabled:
-		return "<Disabled>"
-	default:
-		return "<Internal error>"
-	}
 }
 
 // Halt implements conn.Resource.
@@ -121,7 +77,7 @@ func (p *Pin) Function() string {
 // It stops edge detection if enabled.
 func (p *Pin) Halt() error {
 	if p.usingEdge {
-		if err := p.edge.Halt(); err != nil {
+		if err := p.sysfsPin.Halt(); err != nil {
 			return p.wrap(err)
 		}
 		p.usingEdge = false
@@ -129,7 +85,149 @@ func (p *Pin) Halt() error {
 	return nil
 }
 
-// In sets the pin direction to input and optionally enables a pull-up/down
+// Name implements pin.Pin.
+//
+// It returns the pin name, ex: "PB5".
+func (p *Pin) Name() string {
+	return p.name
+}
+
+// Number implements pin.Pin.
+//
+// It returns the GPIO pin number as represented by gpio sysfs.
+func (p *Pin) Number() int {
+	return int(p.group)*32 + int(p.offset)
+}
+
+// Function implements pin.Pin.
+func (p *Pin) Function() string {
+	return string(p.Func())
+}
+
+// Func implements pin.PinFunc.
+func (p *Pin) Func() pin.Func {
+	if !p.available {
+		return pin.FuncNone
+	}
+	if drvGPIO.gpioMemory == nil {
+		if p.sysfsPin == nil {
+			return pin.Func("ERR")
+		}
+		return p.sysfsPin.Func()
+	}
+	switch f := p.function(); f {
+	case in:
+		if p.FastRead() {
+			return gpio.IN_HIGH
+		}
+		return gpio.IN_LOW
+	case out:
+		if p.FastRead() {
+			return gpio.OUT_HIGH
+		}
+		return gpio.OUT_LOW
+	case alt1:
+		if p.altFunc[0] != "" {
+			return pin.Func(p.altFunc[0])
+		}
+		return pin.Func("ALT1")
+	case alt2:
+		if p.altFunc[1] != "" {
+			return pin.Func(p.altFunc[1])
+		}
+		return pin.Func("ALT2")
+	case alt3:
+		if p.altFunc[2] != "" {
+			return pin.Func(p.altFunc[2])
+		}
+		return pin.Func("ALT3")
+	case alt4:
+		if p.altFunc[3] != "" {
+			if strings.Contains(string(p.altFunc[3]), "EINT") {
+				// It's an input supporting interrupts.
+				if p.FastRead() {
+					return gpio.IN_HIGH
+				}
+				return gpio.IN_LOW
+			}
+			return pin.Func(p.altFunc[3])
+		}
+		return pin.Func("ALT4")
+	case alt5:
+		if p.altFunc[4] != "" {
+			if strings.Contains(string(p.altFunc[4]), "EINT") {
+				// It's an input supporting interrupts.
+				if p.FastRead() {
+					return gpio.IN_HIGH
+				}
+				return gpio.IN_LOW
+			}
+			return pin.Func(p.altFunc[4])
+		}
+		return pin.Func("ALT5")
+	case disabled:
+		return pin.FuncNone
+	default:
+		return pin.FuncNone
+	}
+}
+
+// SupportedFuncs implements pin.PinFunc.
+func (p *Pin) SupportedFuncs() []pin.Func {
+	f := make([]pin.Func, 0, 2+4)
+	f = append(f, gpio.IN, gpio.OUT)
+	for _, m := range p.altFunc {
+		if m != pin.FuncNone && !strings.Contains(string(m), "EINT") {
+			f = append(f, m)
+		}
+	}
+	return f
+}
+
+// SetFunc implements pin.PinFunc.
+func (p *Pin) SetFunc(f pin.Func) error {
+	switch f {
+	case gpio.FLOAT:
+		return p.In(gpio.Float, gpio.NoEdge)
+	case gpio.IN:
+		return p.In(gpio.PullNoChange, gpio.NoEdge)
+	case gpio.IN_LOW:
+		return p.In(gpio.PullDown, gpio.NoEdge)
+	case gpio.IN_HIGH:
+		return p.In(gpio.PullUp, gpio.NoEdge)
+	case gpio.OUT_HIGH:
+		return p.Out(gpio.High)
+	case gpio.OUT_LOW:
+		return p.Out(gpio.Low)
+	default:
+		isGeneral := f == f.Generalize()
+		for i, m := range p.altFunc {
+			if m == f || (isGeneral && m.Generalize() == f) {
+				if err := p.Halt(); err != nil {
+					return err
+				}
+				switch i {
+				case 0:
+					p.setFunction(alt1)
+				case 1:
+					p.setFunction(alt2)
+				case 2:
+					p.setFunction(alt3)
+				case 3:
+					p.setFunction(alt4)
+				case 4:
+					p.setFunction(alt5)
+				}
+				return nil
+			}
+		}
+		return p.wrap(errors.New("unsupported function"))
+	}
+}
+
+// In implements gpio.PinIn.
+//
+// It sets the pin direction to input and optionally enables a pull-up/down
 // resistor as well as edge detection.
 //
 // Not all pins support edge detection on Allwinner processors!
@@ -138,44 +236,52 @@ func (p *Pin) Halt() error {
 // exported at /sys/class/gpio/gpio*/. Note that the pin will not be unexported
 // at shutdown.
 func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
-	if gpioMemory == nil {
-		return p.wrap(errors.New("subsystem not initialized"))
-	}
 	if !p.available {
+		// We do not want the error message about uninitialized system.
 		return p.wrap(errors.New("not available on this CPU architecture"))
 	}
 	if edge != gpio.NoEdge && !p.supportEdge {
 		return p.wrap(errors.New("edge detection is not supported on this pin"))
 	}
 	if p.usingEdge && edge == gpio.NoEdge {
-		if err := p.edge.Halt(); err != nil {
+		if err := p.sysfsPin.Halt(); err != nil {
 			return p.wrap(err)
 		}
 		p.usingEdge = false
+	}
+	if drvGPIO.gpioMemory == nil {
+		if p.sysfsPin == nil {
+			return p.wrap(errors.New("subsystem gpiomem not initialized and sysfs not accessible; try running as root?"))
+		}
+		if pull != gpio.PullNoChange {
+			return p.wrap(errors.New("pull cannot be used when subsystem gpiomem not initialized; try running as root?"))
+		}
+		if err := p.sysfsPin.In(pull, edge); err != nil {
+			return p.wrap(err)
+		}
+		p.usingEdge = edge != gpio.NoEdge
+		return nil
 	}
 	p.setFunction(in)
 	if pull != gpio.PullNoChange {
 		off := p.offset / 16
 		shift := 2 * (p.offset % 16)
 		// Do it in a way that is concurrency safe.
-		gpioMemory.groups[p.group].pull[off] &^= 3 << shift
+		drvGPIO.gpioMemory.groups[p.group].pull[off] &^= 3 << shift
 		switch pull {
 		case gpio.PullDown:
-			gpioMemory.groups[p.group].pull[off] = 2 << shift
+			drvGPIO.gpioMemory.groups[p.group].pull[off] = 2 << shift
 		case gpio.PullUp:
-			gpioMemory.groups[p.group].pull[off] = 1 << shift
+			drvGPIO.gpioMemory.groups[p.group].pull[off] = 1 << shift
 		default:
 		}
 	}
 	if edge != gpio.NoEdge {
-		if p.edge == nil {
-			ok := false
-			if p.edge, ok = sysfs.Pins[p.Number()]; !ok {
-				return p.wrap(errors.New("pin is not exported by sysfs"))
-			}
+		if p.sysfsPin == nil {
+			return p.wrap(fmt.Errorf("pin %d is not exported by sysfs", p.Number()))
 		}
 		// This resets pending edges.
-		if err := p.edge.In(gpio.PullNoChange, edge); err != nil {
+		if err := p.sysfsPin.In(gpio.PullNoChange, edge); err != nil {
 			return p.wrap(err)
 		}
 		p.usingEdge = true
@@ -183,31 +289,46 @@ func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 	return nil
 }
 
-// Read return the current pin level and implements gpio.PinIn.
+// Read implements gpio.PinIn.
 //
-// This function is very fast.
+// It returns the current pin level. This function is fast.
 func (p *Pin) Read() gpio.Level {
-	if gpioMemory == nil || !p.available {
+	if !p.available {
 		return gpio.Low
 	}
-	return gpio.Level(gpioMemory.groups[p.group].data&(1<<p.offset) != 0)
+	if drvGPIO.gpioMemory == nil {
+		if p.sysfsPin == nil {
+			return gpio.Low
+		}
+		return p.sysfsPin.Read()
+	}
+	return gpio.Level(drvGPIO.gpioMemory.groups[p.group].data&(1<<p.offset) != 0)
 }
 
-// WaitForEdge waits for an edge as previously set using In() or the expiration
-// of a timeout.
+// FastRead return the current pin level without any error checking.
+//
+// This function is very fast.
+func (p *Pin) FastRead() gpio.Level {
+	return gpio.Level(drvGPIO.gpioMemory.groups[p.group].data&(1<<p.offset) != 0)
+}
+
+// WaitForEdge implements gpio.PinIn.
+//
+// It waits for an edge as previously set using In() or the expiration of a
+// timeout.
 func (p *Pin) WaitForEdge(timeout time.Duration) bool {
-	if p.edge != nil {
-		return p.edge.WaitForEdge(timeout)
+	if p.sysfsPin != nil {
+		return p.sysfsPin.WaitForEdge(timeout)
 	}
 	return false
 }
 
-// Pull returns the current pull-up/down registor setting.
+// Pull implements gpio.PinIn.
 func (p *Pin) Pull() gpio.Pull {
-	if gpioMemory == nil || !p.available {
+	if drvGPIO.gpioMemory == nil || !p.available {
 		return gpio.PullNoChange
 	}
-	v := gpioMemory.groups[p.group].pull[p.offset/16]
+	v := drvGPIO.gpioMemory.groups[p.group].pull[p.offset/16]
 	switch (v >> (2 * (p.offset % 16))) & 3 {
 	case 0:
 		return gpio.Float
@@ -221,13 +342,22 @@ func (p *Pin) Pull() gpio.Pull {
 	}
 }
 
-// Out ensures that the pin is configured as an output and outputs the value.
+// DefaultPull implements gpio.PinIn.
+func (p *Pin) DefaultPull() gpio.Pull {
+	return p.defaultPull
+}
+
+// Out implements gpio.PinOut.
 func (p *Pin) Out(l gpio.Level) error {
-	if gpioMemory == nil {
-		return p.wrap(errors.New("subsystem not initialized"))
-	}
 	if !p.available {
+		// We do not want the error message about uninitialized system.
 		return p.wrap(errors.New("not available on this CPU architecture"))
+	}
+	if drvGPIO.gpioMemory == nil {
+		if p.sysfsPin != nil {
+			return p.wrap(errors.New("subsystem gpiomem not initialized and sysfs not accessible; try running as root?"))
+		}
+		return p.sysfsPin.Out(l)
 	}
 	// First disable edges.
 	if err := p.Halt(); err != nil {
@@ -245,67 +375,102 @@ func (p *Pin) Out(l gpio.Level) error {
 // to reach Mhz scale bit banging.
 func (p *Pin) FastOut(l gpio.Level) {
 	bit := uint32(1 << p.offset)
-	// Pn_DAT  n*0x24+0x10  Port n Data Register (n from 1(B) to 7(H))
+	// Pn_DAT  n*0x24+0x10  Port n Data Register (n from 0(A) to 8(I))
+	// This is a switch on p.group rather than an index to the groups array for
+	// performance reasons: to avoid Go's array bound checking code.
+	// See https://periph.io/news/2017/gpio_perf/ for details.
 	switch p.group {
+	case 0:
+		if l {
+			drvGPIO.gpioMemory.groups[0].data |= bit
+		} else {
+			drvGPIO.gpioMemory.groups[0].data &^= bit
+		}
 	case 1:
 		if l {
-			gpioMemory.groups[1].data |= bit
+			drvGPIO.gpioMemory.groups[1].data |= bit
 		} else {
-			gpioMemory.groups[1].data &^= bit
+			drvGPIO.gpioMemory.groups[1].data &^= bit
 		}
 	case 2:
 		if l {
-			gpioMemory.groups[2].data |= bit
+			drvGPIO.gpioMemory.groups[2].data |= bit
 		} else {
-			gpioMemory.groups[2].data &^= bit
+			drvGPIO.gpioMemory.groups[2].data &^= bit
 		}
 	case 3:
 		if l {
-			gpioMemory.groups[3].data |= bit
+			drvGPIO.gpioMemory.groups[3].data |= bit
 		} else {
-			gpioMemory.groups[3].data &^= bit
+			drvGPIO.gpioMemory.groups[3].data &^= bit
 		}
 	case 4:
 		if l {
-			gpioMemory.groups[4].data |= bit
+			drvGPIO.gpioMemory.groups[4].data |= bit
 		} else {
-			gpioMemory.groups[4].data &^= bit
+			drvGPIO.gpioMemory.groups[4].data &^= bit
 		}
 	case 5:
 		if l {
-			gpioMemory.groups[5].data |= bit
+			drvGPIO.gpioMemory.groups[5].data |= bit
 		} else {
-			gpioMemory.groups[5].data &^= bit
+			drvGPIO.gpioMemory.groups[5].data &^= bit
 		}
 	case 6:
 		if l {
-			gpioMemory.groups[6].data |= bit
+			drvGPIO.gpioMemory.groups[6].data |= bit
 		} else {
-			gpioMemory.groups[6].data &^= bit
+			drvGPIO.gpioMemory.groups[6].data &^= bit
 		}
 	case 7:
 		if l {
-			gpioMemory.groups[7].data |= bit
+			drvGPIO.gpioMemory.groups[7].data |= bit
 		} else {
-			gpioMemory.groups[7].data &^= bit
+			drvGPIO.gpioMemory.groups[7].data &^= bit
+		}
+	case 8:
+		if l {
+			drvGPIO.gpioMemory.groups[8].data |= bit
+		} else {
+			drvGPIO.gpioMemory.groups[8].data &^= bit
 		}
 	}
 }
 
-// DefaultPull returns the default pull for the pin.
-func (p *Pin) DefaultPull() gpio.Pull {
-	return p.defaultPull
+// PWM implements gpio.PinOut.
+func (p *Pin) PWM(gpio.Duty, physic.Frequency) error {
+	return p.wrap(errors.New("not available on this CPU architecture"))
 }
 
 //
 
+// drive returns the configured output current drive strength for this GPIO.
+//
+// The value returned by this function is not yet verified to be correct. Use
+// with suspicion.
+func (p *Pin) drive() physic.ElectricCurrent {
+	if drvGPIO.gpioMemory == nil {
+		return 0
+	}
+	// Explanation of the buffer configuration, but doesn't state what's the
+	// expected drive strength!
+	// http://files.pine64.org/doc/datasheet/pine-h64/Allwinner_H6%20V200_User_Manual_V1.1.pdf
+	// Section 3.21.3.4 page 381~382
+	//
+	// The A64 and H3 datasheets call for 20mA, so it could be reasonable to
+	// think that the values are 5mA, 10mA, 15mA, 20mA but we don't know for
+	// sure.
+	v := (drvGPIO.gpioMemory.groups[p.group].drv[p.offset/16] >> (2 * (p.offset & 15))) & 3
+	return physic.ElectricCurrent(v+1) * 5 * physic.MilliAmpere
+}
+
 // function returns the current GPIO pin function.
 func (p *Pin) function() function {
-	if gpioMemory == nil {
+	if drvGPIO.gpioMemory == nil {
 		return disabled
 	}
 	shift := 4 * (p.offset % 8)
-	return function((gpioMemory.groups[p.group].cfg[p.offset/8] >> shift) & 7)
+	return function((drvGPIO.gpioMemory.groups[p.group].cfg[p.offset/8] >> shift) & 7)
 }
 
 // setFunction changes the GPIO pin function.
@@ -315,8 +480,8 @@ func (p *Pin) setFunction(f function) {
 	mask := uint32(disabled) << shift
 	v := (uint32(f) << shift) ^ mask
 	// First disable, then setup. This is concurrent safe.
-	gpioMemory.groups[p.group].cfg[off] |= mask
-	gpioMemory.groups[p.group].cfg[off] &^= v
+	drvGPIO.gpioMemory.groups[p.group].cfg[off] |= mask
+	drvGPIO.gpioMemory.groups[p.group].cfg[off] &^= v
 	if p.function() != f {
 		panic(f)
 	}
@@ -342,13 +507,6 @@ const (
 	disabled function = 7
 )
 
-var (
-	// gpioMemory is the memory map of the CPU GPIO registers.
-	gpioMemory *gpioMap
-	// gpioBaseAddr is the physical base address of the GPIO registers.
-	gpioBaseAddr uint32
-)
-
 // cpupins that may be implemented by a generic Allwinner CPU. Not all pins
 // will be present on all models and even if the CPU model supports them they
 // may not be connected to anything on the board. The net effect is that it may
@@ -356,6 +514,24 @@ var (
 // list 100% correct on all platforms seems futile, hence periph errs on the
 // side of caution.
 var cpupins = map[string]*Pin{
+	"PA0":  {group: 0, offset: 0, name: "PA0", defaultPull: gpio.Float},
+	"PA1":  {group: 0, offset: 1, name: "PA1", defaultPull: gpio.Float},
+	"PA2":  {group: 0, offset: 2, name: "PA2", defaultPull: gpio.Float},
+	"PA3":  {group: 0, offset: 3, name: "PA3", defaultPull: gpio.Float},
+	"PA4":  {group: 0, offset: 4, name: "PA4", defaultPull: gpio.Float},
+	"PA5":  {group: 0, offset: 5, name: "PA5", defaultPull: gpio.Float},
+	"PA6":  {group: 0, offset: 6, name: "PA6", defaultPull: gpio.Float},
+	"PA7":  {group: 0, offset: 7, name: "PA7", defaultPull: gpio.Float},
+	"PA8":  {group: 0, offset: 8, name: "PA8", defaultPull: gpio.Float},
+	"PA9":  {group: 0, offset: 9, name: "PA9", defaultPull: gpio.Float},
+	"PA10": {group: 0, offset: 10, name: "PA10", defaultPull: gpio.Float},
+	"PA11": {group: 0, offset: 11, name: "PA11", defaultPull: gpio.Float},
+	"PA12": {group: 0, offset: 12, name: "PA12", defaultPull: gpio.Float},
+	"PA13": {group: 0, offset: 13, name: "PA13", defaultPull: gpio.Float},
+	"PA14": {group: 0, offset: 14, name: "PA14", defaultPull: gpio.Float},
+	"PA15": {group: 0, offset: 15, name: "PA15", defaultPull: gpio.Float},
+	"PA16": {group: 0, offset: 16, name: "PA16", defaultPull: gpio.Float},
+	"PA17": {group: 0, offset: 17, name: "PA17", defaultPull: gpio.Float},
 	"PB0":  {group: 1, offset: 0, name: "PB0", defaultPull: gpio.Float},
 	"PB1":  {group: 1, offset: 1, name: "PB1", defaultPull: gpio.Float},
 	"PB2":  {group: 1, offset: 2, name: "PB2", defaultPull: gpio.Float},
@@ -375,6 +551,11 @@ var cpupins = map[string]*Pin{
 	"PB16": {group: 1, offset: 16, name: "PB16", defaultPull: gpio.Float},
 	"PB17": {group: 1, offset: 17, name: "PB17", defaultPull: gpio.Float},
 	"PB18": {group: 1, offset: 18, name: "PB18", defaultPull: gpio.Float},
+	"PB19": {group: 1, offset: 19, name: "PB19", defaultPull: gpio.Float},
+	"PB20": {group: 1, offset: 20, name: "PB20", defaultPull: gpio.Float},
+	"PB21": {group: 1, offset: 21, name: "PB21", defaultPull: gpio.Float},
+	"PB22": {group: 1, offset: 22, name: "PB22", defaultPull: gpio.Float},
+	"PB23": {group: 1, offset: 23, name: "PB23", defaultPull: gpio.Float},
 	"PC0":  {group: 2, offset: 0, name: "PC0", defaultPull: gpio.Float},
 	"PC1":  {group: 2, offset: 1, name: "PC1", defaultPull: gpio.Float},
 	"PC2":  {group: 2, offset: 2, name: "PC2", defaultPull: gpio.Float},
@@ -395,6 +576,11 @@ var cpupins = map[string]*Pin{
 	"PC17": {group: 2, offset: 17, name: "PC17", defaultPull: gpio.Float},
 	"PC18": {group: 2, offset: 18, name: "PC18", defaultPull: gpio.Float},
 	"PC19": {group: 2, offset: 19, name: "PC19", defaultPull: gpio.Float},
+	"PC20": {group: 2, offset: 20, name: "PC20", defaultPull: gpio.Float},
+	"PC21": {group: 2, offset: 21, name: "PC21", defaultPull: gpio.Float},
+	"PC22": {group: 2, offset: 22, name: "PC22", defaultPull: gpio.Float},
+	"PC23": {group: 2, offset: 23, name: "PC23", defaultPull: gpio.Float},
+	"PC24": {group: 2, offset: 24, name: "PC24", defaultPull: gpio.Float},
 	"PD0":  {group: 3, offset: 0, name: "PD0", defaultPull: gpio.Float},
 	"PD1":  {group: 3, offset: 1, name: "PD1", defaultPull: gpio.Float},
 	"PD2":  {group: 3, offset: 2, name: "PD2", defaultPull: gpio.Float},
@@ -474,9 +660,65 @@ var cpupins = map[string]*Pin{
 	"PH9":  {group: 7, offset: 9, name: "PH9", defaultPull: gpio.Float},
 	"PH10": {group: 7, offset: 10, name: "PH10", defaultPull: gpio.Float},
 	"PH11": {group: 7, offset: 11, name: "PH11", defaultPull: gpio.Float},
+	"PH12": {group: 7, offset: 12, name: "PH12", defaultPull: gpio.Float},
+	"PH13": {group: 7, offset: 13, name: "PH13", defaultPull: gpio.Float},
+	"PH14": {group: 7, offset: 14, name: "PH14", defaultPull: gpio.Float},
+	"PH15": {group: 7, offset: 15, name: "PH15", defaultPull: gpio.Float},
+	"PH16": {group: 7, offset: 16, name: "PH16", defaultPull: gpio.Float},
+	"PH17": {group: 7, offset: 17, name: "PH17", defaultPull: gpio.Float},
+	"PH18": {group: 7, offset: 18, name: "PH18", defaultPull: gpio.Float},
+	"PH19": {group: 7, offset: 19, name: "PH19", defaultPull: gpio.Float},
+	"PH20": {group: 7, offset: 20, name: "PH20", defaultPull: gpio.Float},
+	"PH21": {group: 7, offset: 21, name: "PH21", defaultPull: gpio.Float},
+	"PH22": {group: 7, offset: 22, name: "PH22", defaultPull: gpio.Float},
+	"PH23": {group: 7, offset: 23, name: "PH23", defaultPull: gpio.Float},
+	"PH24": {group: 7, offset: 24, name: "PH24", defaultPull: gpio.Float},
+	"PH25": {group: 7, offset: 25, name: "PH25", defaultPull: gpio.Float},
+	"PH26": {group: 7, offset: 26, name: "PH26", defaultPull: gpio.Float},
+	"PH27": {group: 7, offset: 27, name: "PH27", defaultPull: gpio.Float},
+	"PI0":  {group: 8, offset: 0, name: "PI0", defaultPull: gpio.Float},
+	"PI1":  {group: 8, offset: 1, name: "PI1", defaultPull: gpio.Float},
+	"PI2":  {group: 8, offset: 2, name: "PI2", defaultPull: gpio.Float},
+	"PI3":  {group: 8, offset: 3, name: "PI3", defaultPull: gpio.Float},
+	"PI4":  {group: 8, offset: 4, name: "PI4", defaultPull: gpio.Float},
+	"PI5":  {group: 8, offset: 5, name: "PI5", defaultPull: gpio.Float},
+	"PI6":  {group: 8, offset: 6, name: "PI6", defaultPull: gpio.Float},
+	"PI7":  {group: 8, offset: 7, name: "PI7", defaultPull: gpio.Float},
+	"PI8":  {group: 8, offset: 8, name: "PI8", defaultPull: gpio.Float},
+	"PI9":  {group: 8, offset: 9, name: "PI9", defaultPull: gpio.Float},
+	"PI10": {group: 8, offset: 10, name: "PI10", defaultPull: gpio.Float},
+	"PI11": {group: 8, offset: 11, name: "PI11", defaultPull: gpio.Float},
+	"PI12": {group: 8, offset: 12, name: "PI12", defaultPull: gpio.Float},
+	"PI13": {group: 8, offset: 13, name: "PI13", defaultPull: gpio.Float},
+	"PI14": {group: 8, offset: 14, name: "PI14", defaultPull: gpio.Float},
+	"PI15": {group: 8, offset: 15, name: "PI15", defaultPull: gpio.Float},
+	"PI16": {group: 8, offset: 16, name: "PI16", defaultPull: gpio.Float},
+	"PI17": {group: 8, offset: 17, name: "PI17", defaultPull: gpio.Float},
+	"PI18": {group: 8, offset: 18, name: "PI18", defaultPull: gpio.Float},
+	"PI19": {group: 8, offset: 19, name: "PI19", defaultPull: gpio.Float},
+	"PI20": {group: 8, offset: 20, name: "PI20", defaultPull: gpio.Float},
+	"PI21": {group: 8, offset: 21, name: "PI21", defaultPull: gpio.Float},
 }
 
 func init() {
+	PA0 = cpupins["PA0"]
+	PA1 = cpupins["PA1"]
+	PA2 = cpupins["PA2"]
+	PA3 = cpupins["PA3"]
+	PA4 = cpupins["PA4"]
+	PA5 = cpupins["PA5"]
+	PA6 = cpupins["PA6"]
+	PA7 = cpupins["PA7"]
+	PA8 = cpupins["PA8"]
+	PA9 = cpupins["PA9"]
+	PA10 = cpupins["PA10"]
+	PA11 = cpupins["PA11"]
+	PA12 = cpupins["PA12"]
+	PA13 = cpupins["PA13"]
+	PA14 = cpupins["PA14"]
+	PA15 = cpupins["PA15"]
+	PA16 = cpupins["PA16"]
+	PA17 = cpupins["PA17"]
 	PB0 = cpupins["PB0"]
 	PB1 = cpupins["PB1"]
 	PB2 = cpupins["PB2"]
@@ -496,6 +738,11 @@ func init() {
 	PB16 = cpupins["PB16"]
 	PB17 = cpupins["PB17"]
 	PB18 = cpupins["PB18"]
+	PB19 = cpupins["PB19"]
+	PB20 = cpupins["PB20"]
+	PB21 = cpupins["PB21"]
+	PB22 = cpupins["PB22"]
+	PB23 = cpupins["PB23"]
 	PC0 = cpupins["PC0"]
 	PC1 = cpupins["PC1"]
 	PC2 = cpupins["PC2"]
@@ -513,6 +760,14 @@ func init() {
 	PC14 = cpupins["PC14"]
 	PC15 = cpupins["PC15"]
 	PC16 = cpupins["PC16"]
+	PC17 = cpupins["PC17"]
+	PC18 = cpupins["PC18"]
+	PC19 = cpupins["PC19"]
+	PC20 = cpupins["PC20"]
+	PC21 = cpupins["PC21"]
+	PC22 = cpupins["PC22"]
+	PC23 = cpupins["PC23"]
+	PC24 = cpupins["PC24"]
 	PD0 = cpupins["PD0"]
 	PD1 = cpupins["PD1"]
 	PD2 = cpupins["PD2"]
@@ -592,29 +847,95 @@ func init() {
 	PH9 = cpupins["PH9"]
 	PH10 = cpupins["PH10"]
 	PH11 = cpupins["PH11"]
+	PH12 = cpupins["PH12"]
+	PH13 = cpupins["PH13"]
+	PH14 = cpupins["PH14"]
+	PH15 = cpupins["PH15"]
+	PH16 = cpupins["PH16"]
+	PH17 = cpupins["PH17"]
+	PH18 = cpupins["PH18"]
+	PH19 = cpupins["PH19"]
+	PH20 = cpupins["PH20"]
+	PH21 = cpupins["PH21"]
+	PH22 = cpupins["PH22"]
+	PH23 = cpupins["PH23"]
+	PH24 = cpupins["PH24"]
+	PH25 = cpupins["PH25"]
+	PH26 = cpupins["PH26"]
+	PH27 = cpupins["PH27"]
+	PI0 = cpupins["PI0"]
+	PI1 = cpupins["PI1"]
+	PI2 = cpupins["PI2"]
+	PI3 = cpupins["PI3"]
+	PI4 = cpupins["PI4"]
+	PI5 = cpupins["PI5"]
+	PI6 = cpupins["PI6"]
+	PI7 = cpupins["PI7"]
+	PI8 = cpupins["PI8"]
+	PI9 = cpupins["PI9"]
+	PI10 = cpupins["PI10"]
+	PI11 = cpupins["PI11"]
+	PI12 = cpupins["PI12"]
+	PI13 = cpupins["PI13"]
+	PI14 = cpupins["PI14"]
+	PI15 = cpupins["PI15"]
+	PI16 = cpupins["PI16"]
+	PI17 = cpupins["PI17"]
+	PI18 = cpupins["PI18"]
+	PI19 = cpupins["PI19"]
+	PI20 = cpupins["PI20"]
+	PI21 = cpupins["PI21"]
 }
 
 // initPins initializes the mapping of pins by function, sets the alternate
 // functions of each pin, and registers all the pins with gpio.
 func initPins() error {
-	for i := range cpupins {
+	functions := map[pin.Func]struct{}{}
+	for name, p := range cpupins {
+		num := strconv.Itoa(p.Number())
+		gpion := "GPIO" + num
+
+		// Unregister the pin if already registered. This happens with sysfs-gpio.
+		// Do not error on it, since sysfs-gpio may have failed to load.
+		_ = gpioreg.Unregister(gpion)
+		_ = gpioreg.Unregister(num)
+
 		// Register the pin with gpio.
-		if err := gpioreg.Register(cpupins[i], true); err != nil {
+		if err := gpioreg.Register(p); err != nil {
 			return err
 		}
-		// Iterate through alternate functions and register function->pin mapping.
-		// TODO(maruel): There's a problem where multiple pins may be set to the
-		// same function. Need investigation. For now just ignore errors.
-		for _, f := range cpupins[i].altFunc {
-			if f != "" && f[0] != '<' && f[:2] != "In" && f[:3] != "Out" {
-				// TODO(maruel): Stop ignoring errors by not registering the same
-				// function multiple times.
-				gpioreg.RegisterAlias(f, cpupins[i].Name())
-				/*
-					if err := gpioreg.RegisterAlias(f, cpupins[i].Number()); err != nil {
-						return true, err
+		if err := gpioreg.RegisterAlias(gpion, name); err != nil {
+			return err
+		}
+		if err := gpioreg.RegisterAlias(num, name); err != nil {
+			return err
+		}
+		switch f := p.Func(); f {
+		case gpio.IN, gpio.OUT, pin.FuncNone:
+		default:
+			// Registering the same alias twice fails. This can happen if two pins
+			// are configured with the same function.
+			if _, ok := functions[f]; !ok {
+				functions[f] = struct{}{}
+				if err := gpioreg.RegisterAlias(string(f), name); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Now do a second loop but do the alternate functions.
+	for name, p := range cpupins {
+		for _, f := range p.SupportedFuncs() {
+			switch f {
+			case gpio.IN, gpio.OUT:
+			default:
+				if _, ok := functions[f]; !ok {
+					functions[f] = struct{}{}
+					if err := gpioreg.RegisterAlias(string(f), name); err != nil {
+						return err
 					}
-				*/
+				}
 			}
 		}
 	}
@@ -639,19 +960,21 @@ type gpioGroup struct {
 	// Pn_DAT  n*0x24+0x10      Port n Data Register (n from 1(B) to 7(H))
 	data uint32
 	// Pn_DRVx n*0x24+0x14+x*4  Port n Multi-Driving Register x (n from 1 to 7)
-	drv [2]uint32 // TODO(maruel): Figure out how to use this.
+	drv [2]uint32
 	// Pn_PULL n*0x24+0x1C+x*4  Port n Pull Register (n from 1(B) to 7(H))
 	pull [2]uint32
 }
 
 // gpioMap memory-maps all the gpio pin groups.
 type gpioMap struct {
-	// PB to PH. The first group is unused.
-	groups [8]gpioGroup
+	// PA to PI.
+	groups [9]gpioGroup
 }
 
 // driverGPIO implements periph.Driver.
 type driverGPIO struct {
+	// gpioMemory is the memory map of the CPU GPIO registers.
+	gpioMemory *gpioMap
 }
 
 func (d *driverGPIO) String() string {
@@ -662,6 +985,10 @@ func (d *driverGPIO) Prerequisites() []string {
 	return nil
 }
 
+func (d *driverGPIO) After() []string {
+	return []string{"sysfs-gpio"}
+}
+
 // Init does nothing if an allwinner processor is not detected. If one is
 // detected, it memory maps gpio CPU registers and then sets up the pin mapping
 // for the exact processor model detected.
@@ -669,14 +996,9 @@ func (d *driverGPIO) Init() (bool, error) {
 	if !Present() {
 		return false, errors.New("Allwinner CPU not detected")
 	}
-	gpioBaseAddr = uint32(getBaseAddress())
-	if err := pmem.MapAsPOD(uint64(gpioBaseAddr), &gpioMemory); err != nil {
-		if os.IsPermission(err) {
-			return true, fmt.Errorf("need more access, try as root: %v", err)
-		}
-		return true, err
-	}
 
+	// Mark the right pins as available even if the memory map fails so they can
+	// callback to sysfs.Pins.
 	switch {
 	case IsA64():
 		if err := mapA64Pins(); err != nil {
@@ -686,8 +1008,21 @@ func (d *driverGPIO) Init() (bool, error) {
 		if err := mapR8Pins(); err != nil {
 			return true, err
 		}
+	case IsA20():
+		if err := mapA20Pins(); err != nil {
+			return true, err
+		}
 	default:
 		return false, errors.New("unknown Allwinner CPU model")
+	}
+
+	// gpioBaseAddr is the physical base address of the GPIO registers.
+	gpioBaseAddr := uint32(getBaseAddress())
+	if err := pmem.MapAsPOD(uint64(gpioBaseAddr), &d.gpioMemory); err != nil {
+		if os.IsPermission(err) {
+			return true, fmt.Errorf("need more access, try as root: %v", err)
+		}
+		return true, err
 	}
 
 	return true, initPins()
@@ -695,12 +1030,12 @@ func (d *driverGPIO) Init() (bool, error) {
 
 func init() {
 	if isArm {
-		periph.MustRegister(&driverGPIO{})
+		periph.MustRegister(&drvGPIO)
 	}
 }
 
 // getBaseAddress queries the virtual file system to retrieve the base address
-// of the GPIO registers for GPIO pins in groups PB to PH.
+// of the GPIO registers for GPIO pins in groups PA to PI.
 //
 // Defaults to 0x01C20800 as per datasheet if it could not query the file
 // system.
@@ -721,9 +1056,10 @@ func getBaseAddress() uint64 {
 	return base2
 }
 
-// Ensure that the various structs implement the interfaces they're supposed to.
+var drvGPIO driverGPIO
 
-var _ gpio.PinDefaultPull = &Pin{}
+// Ensure that the various structs implement the interfaces they're supposed to.
 var _ gpio.PinIO = &Pin{}
 var _ gpio.PinIn = &Pin{}
 var _ gpio.PinOut = &Pin{}
+var _ pin.PinFunc = &Pin{}

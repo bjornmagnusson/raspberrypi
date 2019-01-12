@@ -23,15 +23,16 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"periph.io/x/periph/conn/display"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
 	"periph.io/x/periph/devices/ssd1306"
 	"periph.io/x/periph/devices/ssd1306/image1bit"
-	"periph.io/x/periph/host"
 )
 
 func access(name string) bool {
@@ -115,8 +116,8 @@ func drawTextBottomRight(img draw.Image, text string) {
 
 // convert resizes and converts to black and white an image while keeping
 // aspect ratio, put it in a centered image of the same size as the display.
-func convert(s *ssd1306.Dev, src image.Image) *image1bit.VerticalLSB {
-	screenBounds := s.Bounds()
+func convert(disp display.Drawer, src image.Image) *image1bit.VerticalLSB {
+	screenBounds := disp.Bounds()
 	size := screenBounds.Size()
 	src = resize(src, size)
 	img := image1bit.NewVerticalLSB(screenBounds)
@@ -134,7 +135,9 @@ func mainImpl() error {
 
 	h := flag.Int("h", 64, "display height")
 	w := flag.Int("w", 128, "display width")
-	rotated := flag.Bool("r", false, "Rotate the display by 180°")
+	rotated := flag.Bool("r", false, "rotate the display by 180°")
+	sequential := flag.Bool("n", false, "sequential/interleaved hardware pin layout")
+	swapTopBottom := flag.Bool("s", false, "swap top/bottom hardware pin layout")
 
 	imgName := flag.String("i", "ballerine.gif", "image to load; try bunny.gif")
 	text := flag.String("t", "periph is awesome", "text to display")
@@ -149,12 +152,13 @@ func mainImpl() error {
 		return errors.New("unexpected argument, try -help")
 	}
 
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 
 	// Open the device on the right bus.
 	var s *ssd1306.Dev
+	opts := ssd1306.Opts{W: *w, H: *h, Rotated: *rotated, Sequential: *sequential, SwapTopBottom: *swapTopBottom}
 	if *spiID != "" {
 		c, err := spireg.Open(*spiID)
 		if err != nil {
@@ -162,7 +166,7 @@ func mainImpl() error {
 		}
 		defer c.Close()
 		if *hz != 0 {
-			if err := c.LimitSpeed(int64(*hz)); err != nil {
+			if err := c.LimitSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 				return err
 			}
 		}
@@ -174,7 +178,7 @@ func mainImpl() error {
 		if len(*dcName) != 0 {
 			dc = gpioreg.ByName(*dcName)
 		}
-		s, err = ssd1306.NewSPI(c, dc, *w, *h, *rotated)
+		s, err = ssd1306.NewSPI(c, dc, &opts)
 		if err != nil {
 			return err
 		}
@@ -185,7 +189,7 @@ func mainImpl() error {
 		}
 		defer c.Close()
 		if *hz != 0 {
-			if err := c.SetSpeed(int64(*hz)); err != nil {
+			if err := c.SetSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 				return err
 			}
 		}
@@ -193,7 +197,7 @@ func mainImpl() error {
 			// TODO(maruel): Print where the pins are located.
 			log.Printf("Using pins SCL: %s  SDA: %s", p.SCL(), p.SDA())
 		}
-		s, err = ssd1306.NewI2C(c, *w, *h, *rotated)
+		s, err = ssd1306.NewI2C(c, &opts)
 		if err != nil {
 			return err
 		}
@@ -216,7 +220,9 @@ func mainImpl() error {
 			index := i % len(g.Image)
 			c := time.After(time.Duration(10*g.Delay[index]) * time.Millisecond)
 			img := imgs[index]
-			s.Draw(img.Bounds(), img, image.Point{})
+			if err := s.Draw(s.Bounds(), img, image.Point{}); err != nil {
+				return err
+			}
 			<-c
 		}
 		return nil
@@ -229,7 +235,9 @@ func mainImpl() error {
 
 	img := convert(s, src)
 	drawTextBottomRight(img, *text)
-	s.Draw(img.Bounds(), img, image.Point{})
+	if err := s.Draw(s.Bounds(), img, image.Point{}); err != nil {
+		return err
+	}
 	return s.Halt()
 }
 

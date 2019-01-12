@@ -6,11 +6,14 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
 
 	"periph.io/x/periph"
-	"periph.io/x/periph/host"
 )
 
 func printDrivers(drivers []periph.DriverFailure) {
@@ -30,7 +33,17 @@ func printDrivers(drivers []periph.DriverFailure) {
 }
 
 func mainImpl() error {
-	state, err := host.Init()
+	verbose := flag.Bool("v", false, "verbose mode")
+	flag.Parse()
+	if !*verbose {
+		log.SetOutput(ioutil.Discard)
+	}
+	log.SetFlags(log.Lmicroseconds)
+	if flag.NArg() != 0 {
+		return errors.New("unexpected argument, try -help")
+	}
+
+	state, err := hostInit()
 	if err != nil {
 		return err
 	}
@@ -46,11 +59,20 @@ func mainImpl() error {
 			}
 		}
 		for _, d := range state.Loaded {
-			if p := d.Prerequisites(); len(p) != 0 {
-				fmt.Printf("- %-*s: %s\n", max, d, p)
-			} else {
+			p := d.Prerequisites()
+			a := d.After()
+			if len(p) == 0 && len(a) == 0 {
 				fmt.Printf("- %s\n", d)
+				continue
 			}
+			fmt.Printf("- %-*s:", max, d)
+			if len(p) != 0 {
+				fmt.Printf(" %s", p)
+			}
+			if len(a) != 0 {
+				fmt.Printf(" optional: %s", a)
+			}
+			fmt.Printf("\n")
 		}
 	}
 

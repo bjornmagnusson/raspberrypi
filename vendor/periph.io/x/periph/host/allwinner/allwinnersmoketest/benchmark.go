@@ -16,8 +16,9 @@ import (
 
 // Benchmark is imported by periph-smoketest.
 type Benchmark struct {
-	p    *allwinner.Pin
-	pull gpio.Pull
+	short bool
+	p     *allwinner.Pin
+	pull  gpio.Pull
 }
 
 // Name implements the SmokeTest interface.
@@ -33,7 +34,11 @@ func (s *Benchmark) Description() string {
 // Run implements the SmokeTest interface.
 func (s *Benchmark) Run(f *flag.FlagSet, args []string) error {
 	name := f.String("p", "", "Pin to use")
-	f.Parse(args)
+	f.BoolVar(&s.short, "short", false, "Skip many partially redundant benchmarks")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+
 	if f.NArg() != 0 {
 		f.Usage()
 		return errors.New("unsupported flags")
@@ -46,10 +51,16 @@ func (s *Benchmark) Run(f *flag.FlagSet, args []string) error {
 		f.Usage()
 		return errors.New("-p is required")
 	}
-	ok := false
-	s.p, ok = gpioreg.ByName(*name).(*allwinner.Pin)
-	if !ok {
+	p := gpioreg.ByName(*name)
+	if p == nil {
 		return fmt.Errorf("invalid pin %q", *name)
+	}
+	if r, ok := p.(gpio.RealPin); ok {
+		p = r.Real()
+	}
+	ok := false
+	if s.p, ok = p.(*allwinner.Pin); !ok {
+		return fmt.Errorf("pin is not allwinner %q", *name)
 	}
 	s.pull = gpio.PullDown
 	s.runFastGPIOBenchmark()

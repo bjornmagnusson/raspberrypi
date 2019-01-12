@@ -21,14 +21,8 @@ import (
 	"log"
 	"os"
 
+	"periph.io/x/periph"
 	"periph.io/x/periph/host/pmem"
-)
-
-var (
-	// dmaMemory is the memory map of the CPU DMA registers.
-	dmaMemory *dmaMap
-	// dmaBaseAddr is the physical base address of the DMA registers.
-	dmaBaseAddr uint32
 )
 
 // dmaMap represents the DMA memory mapped CPU registers.
@@ -85,8 +79,8 @@ func (d *dmaR8NormalGroup) release() error {
 	d.dstAddr = 0
 	d.byteCounter = 0
 	d.cfg = ndmaLoad
-	//dmaMemory.irqEn &^= ...
-	//dmaMemory.irqPendStas &^= ...
+	//drvDMA.dmaMemory.irqEn &^= ...
+	//drvDMA.dmaMemory.irqPendStas &^= ...
 	return nil
 }
 
@@ -137,8 +131,8 @@ func (d *dmaDedicatedGroup) release() error {
 	d.dstAddr = 0
 	d.byteCounter = 0
 	d.cfg = ddmaLoad
-	//dmaMemory.irqEn &^= ...
-	//dmaMemory.irqPendStas &^= ...
+	//drvDMA.dmaMemory.irqEn &^= ...
+	//drvDMA.dmaMemory.irqPendStas &^= ...
 	return nil
 }
 
@@ -349,14 +343,16 @@ func smokeTest() error {
 	}
 
 	copyMem := func(pDst, pSrc uint64) error {
-		n := dmaMemory.getDedicated()
+		n := drvDMA.dmaMemory.getDedicated()
 		if n == -1 {
 			return errors.New("no channel available")
 		}
-		dmaMemory.irqEn &^= 3 << uint(2*n+16)
-		dmaMemory.irqPendStas = 3 << uint(2*n+16)
-		ch := &dmaMemory.dedicated[n]
-		defer ch.release()
+		drvDMA.dmaMemory.irqEn &^= 3 << uint(2*n+16)
+		drvDMA.dmaMemory.irqPendStas = 3 << uint(2*n+16)
+		ch := &drvDMA.dmaMemory.dedicated[n]
+		defer func() {
+			_ = ch.release()
+		}()
 		ch.set(uint32(pSrc), uint32(pDst)+holeSize, 4096-2*holeSize, false, false, ddmaDstDrqSDRAM|ddmaSrcDrqSDRAM)
 
 		for ch.cfg&ddmaBusy != 0 {
@@ -372,6 +368,16 @@ func smokeTest() error {
 // It implements much more than the DMA controller, it also exposes the clocks,
 // the PWM and PCM controllers.
 type driverDMA struct {
+	// dmaMemory is the memory map of the CPU DMA registers.
+	dmaMemory *dmaMap
+	// pwmMemory is the memory map of the CPU PWM registers.
+	pwmMemory *pwmMap
+	// spiMemory is the memory mapping for the spi CPU registers.
+	spiMemory *spiMap
+	// clockMemory is the memory mapping for the clock CPU registers.
+	clockMemory *clockMap
+	// timerMemory is the memory mapping for the timer CPU registers.
+	timerMemory *timerMap
 }
 
 func (d *driverDMA) String() string {
@@ -382,7 +388,21 @@ func (d *driverDMA) Prerequisites() []string {
 	return []string{"allwinner-gpio"}
 }
 
+func (d *driverDMA) After() []string {
+	return nil
+}
+
 func (d *driverDMA) Init() (bool, error) {
+	// dmaBaseAddr is the physical base address of the DMA registers.
+	var dmaBaseAddr uint32
+	// pwmBaseAddr is the physical base address of the PWM registers.
+	var pwmBaseAddr uint32
+	// spiBaseAddr is the physical base address of the clock registers.
+	var spiBaseAddr uint32
+	// clockBaseAddr is the physical base address of the clock registers.
+	var clockBaseAddr uint32
+	// timerBaseAddr is the physical base address of the timer registers.
+	var timerBaseAddr uint32
 	if IsA64() {
 		// Page 198.
 		dmaBaseAddr = 0x1C02000
@@ -416,23 +436,23 @@ func (d *driverDMA) Init() (bool, error) {
 		return false, errors.New("unsupported CPU architecture")
 	}
 
-	if err := pmem.MapAsPOD(uint64(dmaBaseAddr), &dmaMemory); err != nil {
+	if err := pmem.MapAsPOD(uint64(dmaBaseAddr), &d.dmaMemory); err != nil {
 		if os.IsPermission(err) {
 			return true, fmt.Errorf("need more access, try as root: %v", err)
 		}
 		return true, err
 	}
 
-	if err := pmem.MapAsPOD(uint64(pwmBaseAddr), &pwmMemory); err != nil {
+	if err := pmem.MapAsPOD(uint64(pwmBaseAddr), &d.pwmMemory); err != nil {
 		return true, err
 	}
-	if err := pmem.MapAsPOD(uint64(timerBaseAddr), &timerMemory); err != nil {
+	if err := pmem.MapAsPOD(uint64(timerBaseAddr), &d.timerMemory); err != nil {
 		return true, err
 	}
-	if err := pmem.MapAsPOD(uint64(clockBaseAddr), &clockMemory); err != nil {
+	if err := pmem.MapAsPOD(uint64(clockBaseAddr), &d.clockMemory); err != nil {
 		return true, err
 	}
-	if err := pmem.MapAsPOD(uint64(spiBaseAddr), &spiMemory); err != nil {
+	if err := pmem.MapAsPOD(uint64(spiBaseAddr), &d.spiMemory); err != nil {
 		return true, err
 	}
 
@@ -444,10 +464,11 @@ func (d *driverDMA) Close() error {
 	return nil
 }
 
-/* TODO(maruel): This is intense, wait to be sure it works.
 func init() {
-	if isArm {
-		periph.MustRegister(&driverDMA{})
+	if false && isArm {
+		// TODO(maruel): This is intense, wait to be sure it works.
+		periph.MustRegister(&drvDMA)
 	}
 }
-*/
+
+var drvDMA driverDMA
