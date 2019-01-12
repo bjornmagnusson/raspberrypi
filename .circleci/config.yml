@@ -1,8 +1,10 @@
-version: 2
+${DOCKER_IMAGE_NAME}${DOCKER_IMAGE_NAME}${DOCKER_IMAGE_NAME}version: 2
 jobs:
   build:
     docker:
       - image: docker:stable-git
+        environment:
+          DOCKER_IMAGE_NAME: bjornmagnusson/pi-led
     steps:
       - checkout
       - setup_remote_docker:
@@ -12,24 +14,24 @@ jobs:
           command: |
             docker version
             docker container run --rm --privileged multiarch/qemu-user-static:register --reset
-            DOCKER_BUILDKIT=0 docker image build --cache-from bjornmagnusson/pi-led -t bjornmagnusson/pi-led .
+            DOCKER_BUILDKIT=0 docker image build --cache-from ${DOCKER_IMAGE_NAME} -t ${DOCKER_IMAGE_NAME} .
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              DOCKER_BUILDKIT=0 docker image build -t bjornmagnusson/pi-led:${CIRCLE_TAG} .
+              DOCKER_BUILDKIT=0 docker image build -t ${DOCKER_IMAGE_NAME}:${CIRCLE_TAG} .
             fi
       - run:
           name: Test examples
           command: |
-            docker container run bjornmagnusson/pi-led -demo=true -num=3
+            docker container run ${DOCKER_IMAGE_NAME} -demo=true -num=3
       - deploy:
           name: Push Docker image to Docker Hub
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              docker image push bjornmagnusson/pi-led
+              docker image push ${DOCKER_IMAGE_NAME}
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              docker image push bjornmagnusson/pi-led:${CIRCLE_TAG}
+              docker image push ${DOCKER_IMAGE_NAME}:${CIRCLE_TAG}
             fi
   deploy:
     docker:
