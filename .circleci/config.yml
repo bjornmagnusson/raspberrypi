@@ -11,25 +11,25 @@ jobs:
           name: Build Docker image
           command: |
             docker version
-            docker run --rm --privileged multiarch/qemu-user-static:register --reset
-            docker build -t bjornmagnusson/pi-led .
+            docker container run --rm --privileged multiarch/qemu-user-static:register --reset
+            DOCKER_BUILDKIT=0 docker image build --cache-from bjornmagnusson/pi-led -t bjornmagnusson/pi-led .
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              docker build -t bjornmagnusson/pi-led:${CIRCLE_TAG} .
+              DOCKER_BUILDKIT=0 docker image build -t bjornmagnusson/pi-led:${CIRCLE_TAG} .
             fi
       - run:
           name: Test examples
           command: |
-            docker run bjornmagnusson/pi-led -demo=true -num=3
+            docker container run bjornmagnusson/pi-led -demo=true -num=3
       - deploy:
           name: Push Docker image to Docker Hub
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              docker push bjornmagnusson/pi-led
+              docker image push bjornmagnusson/pi-led
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              docker push bjornmagnusson/pi-led:${CIRCLE_TAG}
+              docker image push bjornmagnusson/pi-led:${CIRCLE_TAG}
             fi
   deploy:
     docker:
