@@ -46,7 +46,9 @@ func mainImpl() error {
 	signal.Notify(ctrlC, os.Interrupt)
 
 	first := true
-	defer os.Stdout.Write([]byte("\n"))
+	defer func() {
+		_, _ = os.Stdout.Write([]byte("\n"))
+	}()
 	for {
 		select {
 		case msg, ok := <-c:
@@ -54,14 +56,23 @@ func mainImpl() error {
 				return nil
 			}
 			if msg.Repeat {
-				os.Stdout.Write([]byte("*"))
+				if _, err := os.Stdout.Write([]byte("*")); err != nil {
+					// Do not return an error on pipe fail, just exit.
+					return nil
+				}
 			} else {
 				if first {
 					first = false
 				} else {
-					os.Stdout.Write([]byte("\n"))
+					if _, err := os.Stdout.Write([]byte("\n")); err != nil {
+						// Do not return an error on pipe fail, just exit.
+						return nil
+					}
 				}
-				fmt.Printf("%s %s ", msg.RemoteType, msg.Key)
+				if _, err := fmt.Printf("%s %s ", msg.RemoteType, msg.Key); err != nil {
+					// Do not return an error on pipe fail, just exit.
+					return nil
+				}
 			}
 		case <-ctrlC:
 			return nil

@@ -6,7 +6,6 @@ package sysfs
 
 import (
 	"errors"
-	"io"
 
 	"periph.io/x/periph/host/fs"
 )
@@ -32,14 +31,17 @@ func fileIOOpenPanic(path string, flag int) (fileIO, error) {
 	panic("don't forget to override fileIOOpen")
 }
 
-type ioctlClose struct{}
+type ioctlClose struct {
+	ioctlErr error
+	closeErr error
+}
 
 func (i *ioctlClose) Ioctl(op uint, data uintptr) error {
-	return nil
+	return i.ioctlErr
 }
 
 func (i *ioctlClose) Close() error {
-	return nil
+	return i.closeErr
 }
 
 type file struct {
@@ -55,7 +57,8 @@ func (f *file) Read(p []byte) (int, error) {
 }
 
 func (f *file) Seek(offset int64, whence int) (int64, error) {
-	if offset == 0 && whence == io.SeekStart {
+	// io.SeekStart was added in go1.7.
+	if offset == 0 && whence == 0 {
 		return 0, nil
 	}
 	return 0, errors.New("not implemented")

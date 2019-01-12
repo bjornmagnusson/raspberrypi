@@ -2,28 +2,6 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package bmxx80 controls a Bosch BMP180/BME280/BMP280 device over I²C, or SPI
-// for the BMx280.
-//
-// BMx280
-//
-// https://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BME280_DS001-11.pdf
-//
-// https://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BMP280-DS001-18.pdf
-//
-// https://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BMP180-DS000-121.pdf
-//
-// The font the official datasheet on page 15 is hard to read, a copy with
-// readable text can be found here:
-//
-// https://cdn-shop.adafruit.com/datasheets/BST-BMP180-DS000-09.pdf
-//
-// Notes on the BMP180 datasheet
-//
-// The results of the calculations in the algorithm on page 15 are partly
-// wrong. It looks like the original authors used non-integer calculations and
-// some nubers were rounded. Take the results of the calculations with a grain
-// of salt.
 package bmxx80
 
 import (
@@ -38,8 +16,8 @@ import (
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/mmr"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
-	"periph.io/x/periph/devices"
 )
 
 // Oversampling affects how much time is taken to measure each of temperature,
@@ -124,132 +102,14 @@ const (
 	F16      Filter = 4
 )
 
-// Dev is a handle to an initialized BMxx80 device.
-//
-// The actual device type was auto detected.
-type Dev struct {
-	d         conn.Conn
-	isSPI     bool
-	is280     bool
-	isBME     bool
-	opts      Opts
-	measDelay time.Duration
-	name      string
-	os        uint8
-	cal180    calibration180
-	cal280    calibration280
-
-	mu   sync.Mutex
-	stop chan struct{}
-	wg   sync.WaitGroup
+// DefaultOpts is the recommended default options.
+var DefaultOpts = Opts{
+	Temperature: O4x,
+	Pressure:    O4x,
+	Humidity:    O4x,
 }
 
-func (d *Dev) String() string {
-	// d.dev.Conn
-	return fmt.Sprintf("%s{%s}", d.name, d.d)
-}
-
-// Sense requests a one time measurement as °C, kPa and % of relative humidity.
-//
-// The very first measurements may be of poor quality.
-func (d *Dev) Sense(env *devices.Environment) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stop != nil {
-		return d.wrap(errors.New("already sensing continuously"))
-	}
-
-	if d.is280 {
-		err := d.writeCommands([]byte{
-			// ctrl_meas
-			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(forced),
-		})
-		if err != nil {
-			return d.wrap(err)
-		}
-		time.Sleep(d.measDelay)
-		for idle := false; !idle; {
-			if idle, err = d.isIdle280(); err != nil {
-				return d.wrap(err)
-			}
-		}
-		return d.sense280(env)
-	}
-	return d.sense180(env)
-}
-
-// SenseContinuous returns measurements as °C, kPa and % of relative humidity
-// on a continuous basis.
-//
-// The application must call Halt() to stop the sensing when done to stop the
-// sensor and close the channel.
-//
-// It's the responsibility of the caller to retrieve the values from the
-// channel as fast as possible, otherwise the interval may not be respected.
-func (d *Dev) SenseContinuous(interval time.Duration) (<-chan devices.Environment, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stop != nil {
-		// Don't send the stop command to the device.
-		close(d.stop)
-		d.stop = nil
-		d.wg.Wait()
-	}
-
-	if d.is280 {
-		s := chooseStandby(d.isBME, interval-d.measDelay)
-		err := d.writeCommands([]byte{
-			// config
-			0xF5, byte(s)<<5 | byte(d.opts.Filter)<<2,
-			// ctrl_meas
-			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(normal),
-		})
-		if err != nil {
-			return nil, d.wrap(err)
-		}
-	}
-
-	sensing := make(chan devices.Environment)
-	d.stop = make(chan struct{})
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-		defer close(sensing)
-		d.sensingContinuous(interval, sensing, d.stop)
-	}()
-	return sensing, nil
-}
-
-// Halt stops the BMxx80 from acquiring measurements as initiated by
-// SenseContinuous().
-//
-// It is recommended to call this function before terminating the process to
-// reduce idle power usage and a goroutine leak.
-func (d *Dev) Halt() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stop == nil {
-		return nil
-	}
-	close(d.stop)
-	d.stop = nil
-	d.wg.Wait()
-
-	if d.is280 {
-		// Page 27 (for register) and 12~13 section 3.3.
-		return d.writeCommands([]byte{
-			// config
-			0xF5, byte(s1s)<<5 | byte(NoFilter)<<2,
-			// ctrl_meas
-			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(sleep),
-		})
-	}
-	return nil
-}
-
-// Opts is optional options to pass to the constructor.
-//
-// Recommended (and default) values are O4x for oversampling.
+// Opts defines the options for the device.
 //
 // Recommended sensing settings as per the datasheet:
 //
@@ -329,7 +189,7 @@ func NewI2C(b i2c.Bus, addr uint16, opts *Opts) (*Dev, error) {
 // When using SPI, the CS line must be used.
 func NewSPI(p spi.Port, opts *Opts) (*Dev, error) {
 	// It works both in Mode0 and Mode3.
-	c, err := p.Connect(10000000, spi.Mode3, 8)
+	c, err := p.Connect(10*physic.MegaHertz, spi.Mode3, 8)
 	if err != nil {
 		return nil, fmt.Errorf("bmxx80: %v", err)
 	}
@@ -340,12 +200,147 @@ func NewSPI(p spi.Port, opts *Opts) (*Dev, error) {
 	return d, nil
 }
 
+// Dev is a handle to an initialized BMxx80 device.
+//
+// The actual device type was auto detected.
+type Dev struct {
+	d         conn.Conn
+	isSPI     bool
+	is280     bool
+	isBME     bool
+	opts      Opts
+	measDelay time.Duration
+	name      string
+	os        uint8
+	cal180    calibration180
+	cal280    calibration280
+
+	mu   sync.Mutex
+	stop chan struct{}
+	wg   sync.WaitGroup
+}
+
+func (d *Dev) String() string {
+	// d.dev.Conn
+	return fmt.Sprintf("%s{%s}", d.name, d.d)
+}
+
+// Sense requests a one time measurement as °C, kPa and % of relative humidity.
+//
+// The very first measurements may be of poor quality.
+func (d *Dev) Sense(e *physic.Env) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stop != nil {
+		return d.wrap(errors.New("already sensing continuously"))
+	}
+
+	if d.is280 {
+		err := d.writeCommands([]byte{
+			// ctrl_meas
+			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(forced),
+		})
+		if err != nil {
+			return d.wrap(err)
+		}
+		doSleep(d.measDelay)
+		for idle := false; !idle; {
+			if idle, err = d.isIdle280(); err != nil {
+				return d.wrap(err)
+			}
+		}
+		return d.sense280(e)
+	}
+	return d.sense180(e)
+}
+
+// SenseContinuous returns measurements as °C, kPa and % of relative humidity
+// on a continuous basis.
+//
+// The application must call Halt() to stop the sensing when done to stop the
+// sensor and close the channel.
+//
+// It's the responsibility of the caller to retrieve the values from the
+// channel as fast as possible, otherwise the interval may not be respected.
+func (d *Dev) SenseContinuous(interval time.Duration) (<-chan physic.Env, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stop != nil {
+		// Don't send the stop command to the device.
+		close(d.stop)
+		d.stop = nil
+		d.wg.Wait()
+	}
+
+	if d.is280 {
+		s := chooseStandby(d.isBME, interval-d.measDelay)
+		err := d.writeCommands([]byte{
+			// config
+			0xF5, byte(s)<<5 | byte(d.opts.Filter)<<2,
+			// ctrl_meas
+			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(normal),
+		})
+		if err != nil {
+			return nil, d.wrap(err)
+		}
+	}
+
+	sensing := make(chan physic.Env)
+	d.stop = make(chan struct{})
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		defer close(sensing)
+		d.sensingContinuous(interval, sensing, d.stop)
+	}()
+	return sensing, nil
+}
+
+// Precision implements physic.SenseEnv.
+func (d *Dev) Precision(e *physic.Env) {
+	if d.is280 {
+		e.Temperature = 10 * physic.MilliKelvin
+		e.Pressure = 15625 * physic.MicroPascal / 4
+	} else {
+		e.Temperature = 100 * physic.MilliKelvin
+		e.Pressure = physic.Pascal
+	}
+
+	if d.isBME {
+		e.Humidity = 10000 / 1024 * physic.MicroRH
+	}
+}
+
+// Halt stops the BMxx80 from acquiring measurements as initiated by
+// SenseContinuous().
+//
+// It is recommended to call this function before terminating the process to
+// reduce idle power usage and a goroutine leak.
+func (d *Dev) Halt() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stop == nil {
+		return nil
+	}
+	close(d.stop)
+	d.stop = nil
+	d.wg.Wait()
+
+	if d.is280 {
+		// Page 27 (for register) and 12~13 section 3.3.
+		return d.writeCommands([]byte{
+			// config
+			0xF5, byte(s1s)<<5 | byte(NoFilter)<<2,
+			// ctrl_meas
+			0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(sleep),
+		})
+	}
+	return nil
+}
+
 //
 
 func (d *Dev) makeDev(opts *Opts) error {
-	if opts == nil {
-		opts = &defaults
-	}
 	d.opts = *opts
 	d.measDelay = d.opts.delayTypical280()
 
@@ -420,10 +415,7 @@ func (d *Dev) makeDev(opts *Opts) error {
 				0xF4, byte(d.opts.Temperature)<<5 | byte(d.opts.Pressure)<<2 | byte(sleep),
 			}
 		}
-		if err := d.writeCommands(b); err != nil {
-			return err
-		}
-		return nil
+		return d.writeCommands(b)
 	}
 	// Read calibration data.
 	dev := mmr.Dev8{Conn: d.d, Order: binary.BigEndian}
@@ -436,14 +428,14 @@ func (d *Dev) makeDev(opts *Opts) error {
 	return nil
 }
 
-func (d *Dev) sensingContinuous(interval time.Duration, sensing chan<- devices.Environment, stop <-chan struct{}) {
+func (d *Dev) sensingContinuous(interval time.Duration, sensing chan<- physic.Env, stop <-chan struct{}) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
 	var err error
 	for {
 		// Do one initial sensing right away.
-		var e devices.Environment
+		e := physic.Env{}
 		d.mu.Lock()
 		if d.is280 {
 			err = d.sense280(&e)
@@ -508,12 +500,7 @@ func (d *Dev) wrap(err error) error {
 	return fmt.Errorf("%s: %v", strings.ToLower(d.name), err)
 }
 
-var defaults = Opts{
-	Temperature: O4x,
-	Pressure:    O4x,
-	Humidity:    O4x,
-}
+var doSleep = time.Sleep
 
 var _ conn.Resource = &Dev{}
-var _ devices.Environmental = &Dev{}
-var _ fmt.Stringer = &Dev{}
+var _ physic.SenseEnv = &Dev{}

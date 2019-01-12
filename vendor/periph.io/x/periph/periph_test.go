@@ -6,39 +6,12 @@ package periph
 
 import (
 	"errors"
-	"fmt"
-	"log"
-	"sort"
 	"testing"
 )
 
-func ExampleInit() {
-	// You probably want host.Init() instead as it registers all the
-	// periph-provided host drivers automatically.
-	state, err := Init()
-	if err != nil {
-		log.Fatalf("failed to initialize periph: %v", err)
-	}
-	fmt.Printf("Using drivers:\n")
-	for _, driver := range state.Loaded {
-		fmt.Printf("- %s\n", driver)
-	}
-	fmt.Printf("Drivers skipped:\n")
-	for _, failure := range state.Skipped {
-		fmt.Printf("- %s: %s\n", failure.D, failure.Err)
-	}
-	// Having drivers failing to load may not require process termination. It
-	// is possible to continue to run in partial failure mode.
-	fmt.Printf("Drivers failed to load:\n")
-	for _, failure := range state.Failed {
-		fmt.Printf("- %s: %v\n", failure.D, failure.Err)
-	}
-
-	// Use pins, buses, devices, etc.
-}
-
 func TestInitSimple(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -47,9 +20,6 @@ func TestInitSimple(t *testing.T) {
 			err:     nil,
 		},
 	})
-	if len(allDrivers) != 1 {
-		t.Fatal(allDrivers)
-	}
 	if len(byName) != 1 {
 		t.Fatal(byName)
 	}
@@ -67,6 +37,7 @@ func TestInitSimple(t *testing.T) {
 
 func TestInitSkip(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -86,6 +57,7 @@ func TestInitSkip(t *testing.T) {
 
 func TestInitErr(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -103,8 +75,9 @@ func TestInitErr(t *testing.T) {
 	}
 }
 
-func TestInitCircular(t *testing.T) {
+func TestInitPrerequisitesCircular(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -123,10 +96,14 @@ func TestInitCircular(t *testing.T) {
 	if err == nil || len(state.Loaded) != 0 {
 		t.Fatal(state, err)
 	}
+	if err.Error() != "periph: found cycle(s) in drivers dependencies:\nBoard: CPU\nCPU: Board" {
+		t.Fatal(err)
+	}
 }
 
-func TestInitMissing(t *testing.T) {
+func TestInitPrerequisitesMissing(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -141,8 +118,26 @@ func TestInitMissing(t *testing.T) {
 	}
 }
 
+func TestInitAfterMissing(t *testing.T) {
+	defer reset()
+	reset()
+	registerDrivers([]Driver{
+		&driver{
+			name:  "CPU",
+			after: []string{"Board"},
+			ok:    true,
+			err:   nil,
+		},
+	})
+	state, err := Init()
+	if err != nil || len(state.Loaded) != 1 {
+		t.Fatal(state, err)
+	}
+}
+
 func TestDependencySkipped(t *testing.T) {
 	defer reset()
+	reset()
 	registerDrivers([]Driver{
 		&driver{
 			name:    "CPU",
@@ -165,6 +160,7 @@ func TestDependencySkipped(t *testing.T) {
 
 func TestRegisterLate(t *testing.T) {
 	defer reset()
+	reset()
 	if _, err := Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +177,7 @@ func TestRegisterLate(t *testing.T) {
 
 func TestRegisterTwice(t *testing.T) {
 	defer reset()
+	reset()
 	d := &driver{
 		name:    "CPU",
 		prereqs: nil,
@@ -197,6 +194,7 @@ func TestRegisterTwice(t *testing.T) {
 
 func TestMustRegisterPanic(t *testing.T) {
 	defer reset()
+	reset()
 	d := &driver{
 		name:    "CPU",
 		prereqs: nil,
@@ -218,8 +216,9 @@ func TestMustRegisterPanic(t *testing.T) {
 	}
 }
 
-func TestExplodeStagesSimple(t *testing.T) {
+func TestPrerequisitesExplodeStagesSimple(t *testing.T) {
 	defer reset()
+	reset()
 	d := []Driver{
 		&driver{
 			name:    "CPU",
@@ -229,8 +228,8 @@ func TestExplodeStagesSimple(t *testing.T) {
 		},
 	}
 	registerDrivers(d)
-	actual, err := explodeStages(d)
-	if len(actual) != 1 || len(actual[0]) != 1 {
+	actual, err := explodeStages()
+	if len(actual) != 1 || len(actual[0].drvs) != 1 {
 		t.Fatal(actual)
 	}
 	if err != nil {
@@ -238,8 +237,9 @@ func TestExplodeStagesSimple(t *testing.T) {
 	}
 }
 
-func TestExplodeStages1Dep(t *testing.T) {
+func TestPrerequisitesExplodeStages1Dep(t *testing.T) {
 	defer reset()
+	reset()
 	// This explodes the stage into two.
 	d := []Driver{
 		&driver{
@@ -256,14 +256,15 @@ func TestExplodeStages1Dep(t *testing.T) {
 		},
 	}
 	registerDrivers(d)
-	actual, err := explodeStages(d)
-	if len(actual) != 2 || len(actual[0]) != 1 || actual[0][0] != d[1] || len(actual[1]) != 1 || actual[1][0] != d[0] || err != nil {
+	actual, err := explodeStages()
+	if len(actual) != 2 || len(actual[0].drvs) != 1 || actual[0].drvs["CPU-generic"] != d[1] || len(actual[1].drvs) != 1 || actual[1].drvs["CPU-specialized"] != d[0] || err != nil {
 		t.Fatal(actual, err)
 	}
 }
 
-func TestExplodeStagesCycle(t *testing.T) {
+func TestPrerequisitesExplodeStagesCycle(t *testing.T) {
 	defer reset()
+	reset()
 	d := []Driver{
 		&driver{
 			name:    "A",
@@ -285,7 +286,7 @@ func TestExplodeStagesCycle(t *testing.T) {
 		},
 	}
 	registerDrivers(d)
-	actual, err := explodeStages(d)
+	actual, err := explodeStages()
 	if len(actual) != 0 {
 		t.Fatal(actual)
 	}
@@ -294,8 +295,9 @@ func TestExplodeStagesCycle(t *testing.T) {
 	}
 }
 
-func TestExplodeStages3Dep(t *testing.T) {
+func TestPrerequisitesExplodeStages3Dep(t *testing.T) {
 	defer reset()
+	reset()
 	// This explodes the stage into 3 due to diamond shaped DAG.
 	d := []Driver{
 		&driver{
@@ -324,8 +326,48 @@ func TestExplodeStages3Dep(t *testing.T) {
 		},
 	}
 	registerDrivers(d)
-	actual, err := explodeStages(d)
-	if len(actual) != 3 || len(actual[0]) != 1 || len(actual[1]) != 2 || len(actual[2]) != 1 {
+	actual, err := explodeStages()
+	if len(actual) != 3 || len(actual[0].drvs) != 1 || len(actual[1].drvs) != 2 || len(actual[2].drvs) != 1 {
+		t.Fatal(actual)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAfterExplodeStages3Dep(t *testing.T) {
+	defer reset()
+	reset()
+	// This explodes the stage into 3 due to diamond shaped DAG.
+	d := []Driver{
+		&driver{
+			name:  "base2",
+			after: []string{"root"},
+			ok:    true,
+			err:   nil,
+		},
+		&driver{
+			name:  "base1",
+			after: []string{"root"},
+			ok:    true,
+			err:   nil,
+		},
+		&driver{
+			name:    "root",
+			prereqs: nil,
+			ok:      true,
+			err:     nil,
+		},
+		&driver{
+			name:  "super",
+			after: []string{"base1", "base2"},
+			ok:    true,
+			err:   nil,
+		},
+	}
+	registerDrivers(d)
+	actual, err := explodeStages()
+	if len(actual) != 3 || len(actual[0].drvs) != 1 || len(actual[1].drvs) != 2 || len(actual[2].drvs) != 1 {
 		t.Fatal(actual)
 	}
 	if err != nil {
@@ -334,25 +376,34 @@ func TestExplodeStages3Dep(t *testing.T) {
 }
 
 func TestDrivers(t *testing.T) {
-	d := drivers{&driver{name: "b"}, &driver{name: "a"}}
-	sort.Sort(d)
-	if d[0].String() != "a" || d[1].String() != "b" {
-		t.Fatal(d)
+	var d []Driver
+	d = insertDriver(d, &driver{name: "b"})
+	d = insertDriver(d, &driver{name: "d"})
+	d = insertDriver(d, &driver{name: "c"})
+	d = insertDriver(d, &driver{name: "a"})
+	for i, l := range []string{"a", "b", "c", "d"} {
+		if d[i].String() != l {
+			t.Fatal(d)
+		}
 	}
 }
 
 func TestFailures(t *testing.T) {
-	f := failures{DriverFailure{D: &driver{name: "b"}}, DriverFailure{D: &driver{name: "a"}}}
-	sort.Sort(f)
-	if f[0].String() != "a: <nil>" || f[1].String() != "b: <nil>" {
-		t.Fatal(f)
+	var d []DriverFailure
+	d = insertDriverFailure(d, DriverFailure{D: &driver{name: "b"}})
+	d = insertDriverFailure(d, DriverFailure{D: &driver{name: "d"}})
+	d = insertDriverFailure(d, DriverFailure{D: &driver{name: "c"}})
+	d = insertDriverFailure(d, DriverFailure{D: &driver{name: "a"}})
+	for i, l := range []string{"a", "b", "c", "d"} {
+		if d[i].D.String() != l {
+			t.Fatal(d)
+		}
 	}
 }
 
 //
 
 func reset() {
-	allDrivers = []Driver{}
 	byName = map[string]Driver{}
 	state = nil
 }
@@ -366,6 +417,7 @@ func registerDrivers(drivers []Driver) {
 type driver struct {
 	name    string
 	prereqs []string
+	after   []string
 	ok      bool
 	err     error
 }
@@ -376,6 +428,10 @@ func (d *driver) String() string {
 
 func (d *driver) Prerequisites() []string {
 	return d.prereqs
+}
+
+func (d *driver) After() []string {
+	return d.after
 }
 
 func (d *driver) Init() (bool, error) {

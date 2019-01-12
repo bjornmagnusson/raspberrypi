@@ -6,19 +6,11 @@ package bcm283x
 
 import (
 	"errors"
+	"fmt"
 	"time"
-)
 
-// Page 138
-// - Two independent bit-streams
-// - Each channel either a PWM or serialised version of a 32-bit word
-// - Variable input and output resolutions.
-// - Load data from a FIFO storage block, to extent to 8 32-bit words (256
-//   bits).
-//
-// Author note: 100Mhz base resolution with a 256 bits 1-bit stream is actually
-// good enough to generate a DAC.
-var pwmMemory *pwmMap
+	"periph.io/x/periph/conn/physic"
+)
 
 // PWENi is used to enable/disable the corresponding channel. Setting this bit
 // to 1 enables the channel and transmitter state machine. All registers and
@@ -220,32 +212,61 @@ func (p *pwmMap) reset() {
 // It may select an higher frequency than the one requested.
 //
 // Other potentially good clock sources are PCM, SPI and UART.
-func setPWMClockSource(hz uint64) (uint64, int, error) {
-	if pwmMemory == nil {
-		return 0, 0, errors.New("subsystem PWM not initialized")
+func setPWMClockSource() (physic.Frequency, error) {
+	if drvDMA.pwmMemory == nil {
+		return 0, errors.New("subsystem PWM not initialized")
 	}
-	if clockMemory == nil {
-		return 0, 0, errors.New("subsystem Clock not initialized")
+	if drvDMA.clockMemory == nil {
+		return 0, errors.New("subsystem Clock not initialized")
 	}
-	actual, divs, err := clockMemory.pwm.set(hz, dmaWaitcyclesMax+1)
-	if err == nil {
-		pwmMemory.ctl = 0
-		Nanospin(10 * time.Microsecond)
-		pwmMemory.status = pwmStatusMask
-		Nanospin(10 * time.Microsecond)
-		// It acts as a clock multiplier, since this amount of data is sent per
-		// clock tick.
-		pwmMemory.rng1 = 10 // 32?
-		Nanospin(10 * time.Microsecond)
-		// Periph data (?)
+	if drvDMA.pwmDMACh != nil {
+		// Already initialized
+		return drvDMA.pwmDMAFreq, nil
+	}
 
-		// Use low priority.
-		pwmMemory.dmaCfg = pwmDMAEnable | pwmDMACfg(15<<pwmPanicShift|15)
-		Nanospin(10 * time.Microsecond)
-		pwmMemory.ctl = pwmClearFIFO
-		Nanospin(10 * time.Microsecond)
-		pwmMemory.ctl = pwm1UseFIFO | pwm1Enable
+	// divs * div must fit in rng1 registor.
+	div := uint32(drvDMA.pwmBaseFreq / drvDMA.pwmDMAFreq)
+	actual, divs, err := drvDMA.clockMemory.pwm.set(drvDMA.pwmBaseFreq, div)
+	if err != nil {
+		return 0, err
 	}
-	// Convert divisor into wait cycles.
-	return actual, divs - 1, err
+
+	if e := actual / physic.Frequency(divs*div); drvDMA.pwmDMAFreq != e {
+		return 0, fmt.Errorf("Unexpected DMA frequency %s != %s (%d/%d/%d)", drvDMA.pwmDMAFreq, e, actual, divs, div)
+	}
+	// It acts as a clock multiplier, since this amount of data is sent per
+	// clock tick.
+	drvDMA.pwmMemory.rng1 = divs * div
+	Nanospin(10 * time.Microsecond)
+	// Periph data (?)
+
+	// Use low priority.
+	drvDMA.pwmMemory.dmaCfg = pwmDMAEnable | pwmDMACfg(15<<pwmPanicShift|15)
+	Nanospin(10 * time.Microsecond)
+	drvDMA.pwmMemory.ctl |= pwmClearFIFO
+	Nanospin(10 * time.Microsecond)
+	old := drvDMA.pwmMemory.ctl
+	drvDMA.pwmMemory.ctl = (old & ^pwmControl(0xff)) | pwm1UseFIFO | pwm1Enable
+
+	// Start DMA
+	if drvDMA.pwmDMACh, drvDMA.pwmDMABuf, err = dmaWritePWMFIFO(); err != nil {
+		return 0, err
+	}
+
+	return drvDMA.pwmDMAFreq, nil
+}
+
+func resetPWMClockSource() error {
+	if drvDMA.pwmDMACh != nil {
+		drvDMA.pwmDMACh.reset()
+		drvDMA.pwmDMACh = nil
+	}
+	if drvDMA.pwmDMABuf != nil {
+		if err := drvDMA.pwmDMABuf.Close(); err != nil {
+			return err
+		}
+		drvDMA.pwmDMABuf = nil
+	}
+	_, _, err := drvDMA.clockMemory.pwm.set(0, 0)
+	return err
 }

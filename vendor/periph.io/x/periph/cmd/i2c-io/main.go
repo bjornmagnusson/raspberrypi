@@ -16,7 +16,7 @@ import (
 
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
-	"periph.io/x/periph/host"
+	"periph.io/x/periph/conn/physic"
 )
 
 func mainImpl() error {
@@ -33,6 +33,9 @@ func mainImpl() error {
 		log.SetOutput(ioutil.Discard)
 	}
 	log.SetFlags(log.Lmicroseconds)
+	if flag.NArg() != 0 {
+		return errors.New("unexpected argument, try -help")
+	}
 
 	if *addr < 0 || *addr >= 1<<9 {
 		return fmt.Errorf("-a is required and must be between 0 and %d", 1<<9-1)
@@ -44,7 +47,7 @@ func mainImpl() error {
 		return errors.New("-l must be between 1 and 255")
 	}
 
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 
@@ -53,7 +56,8 @@ func mainImpl() error {
 		if flag.NArg() == 0 {
 			return errors.New("specify data to write as a list of hex encoded bytes")
 		}
-		buf = make([]byte, 0, flag.NArg())
+		buf = make([]byte, 1, flag.NArg()+1)
+		buf[0] = byte(*reg)
 		for _, a := range flag.Args() {
 			b, err := strconv.ParseUint(a, 0, 8)
 			if err != nil {
@@ -75,7 +79,7 @@ func mainImpl() error {
 	defer bus.Close()
 
 	if *hz != 0 {
-		if err := bus.SetSpeed(int64(*hz)); err != nil {
+		if err := bus.SetSpeed(physic.Frequency(*hz) * physic.Hertz); err != nil {
 			return err
 		}
 	}

@@ -10,11 +10,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
 	"periph.io/x/periph"
+	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/host/fs"
 )
 
@@ -50,27 +54,9 @@ type LED struct {
 	fBrightness *fs.File // handle to /sys/class/gpio/gpio*/direction; never closed
 }
 
-// Name returns the pin name.
-func (l *LED) Name() string {
-	return l.name
-}
-
-// String returns the name(number).
+// String implements conn.Resource.
 func (l *LED) String() string {
 	return fmt.Sprintf("%s(%d)", l.name, l.number)
-}
-
-// Number returns the sysfs pin number.
-func (l *LED) Number() int {
-	return l.number
-}
-
-// Function returns the current pin function and state, ex: "LED/On".
-func (l *LED) Function() string {
-	if l.Read() {
-		return "LED/On"
-	}
-	return "LED/Off"
 }
 
 // Halt implements conn.Resource.
@@ -78,6 +64,49 @@ func (l *LED) Function() string {
 // It turns the light off.
 func (l *LED) Halt() error {
 	return l.Out(gpio.Low)
+}
+
+// Name implements pin.Pin.
+func (l *LED) Name() string {
+	return l.name
+}
+
+// Number implements pin.Pin.
+func (l *LED) Number() int {
+	return l.number
+}
+
+// Function implements pin.Pin.
+func (l *LED) Function() string {
+	if l.Read() {
+		return "LED/On"
+	}
+	return "LED/Off"
+}
+
+// Func implements pin.PinFunc.
+func (l *LED) Func() pin.Func {
+	if l.Read() {
+		return gpio.OUT_HIGH
+	}
+	return gpio.OUT_LOW
+}
+
+// SupportedFuncs implements pin.PinFunc.
+func (l *LED) SupportedFuncs() []pin.Func {
+	return []pin.Func{gpio.OUT}
+}
+
+// SetFunc implements pin.PinFunc.
+func (l *LED) SetFunc(f pin.Func) error {
+	switch f {
+	case gpio.OUT_HIGH:
+		return l.Out(gpio.High)
+	case gpio.OUT, gpio.OUT_LOW:
+		return l.Out(gpio.Low)
+	default:
+		return errors.New("sysfs-led: unsupported function")
+	}
 }
 
 // In implements gpio.PinIn.
@@ -122,6 +151,11 @@ func (l *LED) Pull() gpio.Pull {
 	return gpio.PullNoChange
 }
 
+// DefaultPull implements gpio.PinIn.
+func (l *LED) DefaultPull() gpio.Pull {
+	return gpio.PullNoChange
+}
+
 // Out implements gpio.PinOut.
 func (l *LED) Out(level gpio.Level) error {
 	err := l.open()
@@ -138,6 +172,24 @@ func (l *LED) Out(level gpio.Level) error {
 	} else {
 		_, err = l.fBrightness.Write([]byte("0"))
 	}
+	return err
+}
+
+// PWM implements gpio.PinOut.
+//
+// This sets the intensity level, if supported. The frequency is ignored.
+func (l *LED) PWM(d gpio.Duty, f physic.Frequency) error {
+	err := l.open()
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, err = l.fBrightness.Seek(0, 0); err != nil {
+		return err
+	}
+	v := (d + gpio.DutyMax/512) / (gpio.DutyMax / 256)
+	_, err = l.fBrightness.Write([]byte(strconv.Itoa(int(v))))
 	return err
 }
 
@@ -170,6 +222,10 @@ func (d *driverLED) Prerequisites() []string {
 	return nil
 }
 
+func (d *driverLED) After() []string {
+	return nil
+}
+
 // Init initializes LEDs sysfs handling code.
 //
 // Uses led sysfs as described* at
@@ -198,11 +254,14 @@ func (d *driverLED) Init() (bool, error) {
 
 func init() {
 	if isLinux {
-		periph.MustRegister(&driverLED{})
+		periph.MustRegister(&drvLED)
 	}
 }
 
+var drvLED driverLED
+
+var _ conn.Resource = &LED{}
 var _ gpio.PinIn = &LED{}
 var _ gpio.PinOut = &LED{}
 var _ gpio.PinIO = &LED{}
-var _ fmt.Stringer = &LED{}
+var _ pin.PinFunc = &LED{}

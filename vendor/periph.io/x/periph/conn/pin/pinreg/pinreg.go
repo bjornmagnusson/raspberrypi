@@ -5,7 +5,7 @@
 package pinreg
 
 import (
-	"fmt"
+	"errors"
 	"strconv"
 	"sync"
 
@@ -60,12 +60,12 @@ func Register(name string, allPins [][]pin.Pin) error {
 	mu.Lock()
 	defer mu.Unlock()
 	if _, ok := allHeaders[name]; ok {
-		return fmt.Errorf("pinreg: header %q was already registered", name)
+		return errors.New("pinreg: header " + strconv.Quote(name) + " was already registered")
 	}
 	for i, line := range allPins {
 		for j, pin := range line {
 			if pin == nil || len(pin.Name()) == 0 {
-				return fmt.Errorf("pinreg: invalid pin on header %s[%d][%d]", name, i+1, j+1)
+				return errors.New("pinreg: invalid pin on header " + name + "[" + strconv.Itoa(i+1) + "][" + strconv.Itoa(j+1) + "]")
 			}
 		}
 	}
@@ -84,13 +84,25 @@ func Register(name string, allPins [][]pin.Pin) error {
 			count++
 			if _, ok := p.(gpio.PinIO); ok {
 				if err := gpioreg.RegisterAlias(name+"_"+strconv.Itoa(count), p.Name()); err != nil {
-					return fmt.Errorf("pinreg: %v", err)
+					// Unregister as much as possible.
+					_ = unregister(name)
+					return errors.New("pinreg: " + err.Error())
 				}
 			}
 		}
 	}
 
 	return nil
+}
+
+// Unregister removes a previously registered header.
+//
+// This can happen when an USB device, which exposed an header, is unplugged.
+// This is also useful for unit testing.
+func Unregister(name string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return unregister(name)
 }
 
 //
@@ -106,13 +118,31 @@ var (
 	byPin      = map[string]position{}    // GPIO pin name to position
 )
 
+func unregister(name string) error {
+	if hdr, ok := allHeaders[name]; ok {
+		var err error
+		delete(allHeaders, name)
+		count := 0
+		for _, row := range hdr {
+			for _, p := range row {
+				count++
+				if _, ok := p.(gpio.PinIO); ok {
+					if err1 := gpioreg.Unregister(name + "_" + strconv.Itoa(count)); err1 != nil && err == nil {
+						// Continue unregistering as much as possible.
+						err = errors.New("pinreg: " + err1.Error())
+					}
+				}
+			}
+		}
+		return err
+	}
+	return errors.New("pinreg: can't unregister unknown header name " + strconv.Quote(name))
+}
+
 // realPin returns the real pin from an alias.
 func realPin(p pin.Pin) pin.Pin {
-	for {
-		if r, ok := p.(gpio.RealPin); ok {
-			p = r.Real()
-		} else {
-			return p
-		}
+	if r, ok := p.(gpio.RealPin); ok {
+		p = r.Real()
 	}
+	return p
 }

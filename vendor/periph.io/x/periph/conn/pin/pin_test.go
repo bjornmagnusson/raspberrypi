@@ -5,24 +5,12 @@
 package pin
 
 import (
-	"fmt"
 	"testing"
 )
 
-func ExampleBasicPin() {
-	// Declare a basic pin, that is not a GPIO, for registration on an header.
-	b := &BasicPin{N: "Exotic"}
-	fmt.Printf("%s\n", b)
-
-	// Output:
-	// Exotic
-}
-
-//
-
 func TestInvalid(t *testing.T) {
-	if INVALID.String() != "INVALID" {
-		t.Fail()
+	if s := INVALID.String(); s != "INVALID" {
+		t.Fatal(s)
 	}
 }
 
@@ -30,6 +18,9 @@ func TestBasicPin(t *testing.T) {
 	b := BasicPin{N: "Pin1"}
 	if s := b.String(); s != "Pin1" {
 		t.Fatal(s)
+	}
+	if err := b.Halt(); err != nil {
+		t.Fatal(err)
 	}
 	if s := b.Name(); s != "Pin1" {
 		t.Fatal(s)
@@ -39,5 +30,23 @@ func TestBasicPin(t *testing.T) {
 	}
 	if s := b.Function(); s != "" {
 		t.Fatal(s)
+	}
+	if f := b.Func(); f != FuncNone {
+		t.Fatal(f)
+	}
+	if f := b.SupportedFuncs(); len(f) != 0 {
+		t.Fatal(f)
+	}
+	if err := b.SetFunc(Func("Out/Low")); err == nil {
+		t.Fatal("expected failure")
+	}
+}
+
+func TestV3_3(t *testing.T) {
+	if f := V3_3.Func(); f != FuncNone {
+		t.Fatal(f)
+	}
+	if f := V3_3.SupportedFuncs(); len(f) != 0 {
+		t.Fatal(f)
 	}
 }

@@ -24,9 +24,13 @@ import (
 	"strings"
 	"time"
 
+	"periph.io/x/periph/conn/display"
+	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/conn/gpio/gpiostream"
-	"periph.io/x/periph/devices"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/spi"
+	"periph.io/x/periph/conn/spi/spireg"
 	"periph.io/x/periph/experimental/devices/nrzled"
 	"periph.io/x/periph/host"
 )
@@ -87,8 +91,8 @@ func resize(src image.Image, width, height int) *image.NRGBA {
 	return dst
 }
 
-func showImage(display devices.Display, img image.Image, sleep time.Duration, loop bool, height int) {
-	r := display.Bounds()
+func showImage(disp display.Drawer, img image.Image, sleep time.Duration, loop bool, height int) {
+	r := disp.Bounds()
 	w := r.Dx()
 	orig := img.Bounds().Size()
 	if height == 0 {
@@ -102,7 +106,10 @@ func showImage(display devices.Display, img image.Image, sleep time.Duration, lo
 	for {
 		for p.Y = 0; p.Y < height; p.Y++ {
 			c := time.After(sleep)
-			display.Draw(r, img, p)
+			if err := disp.Draw(r, img, image.Point{}); err != nil {
+				log.Printf("error drawing: %v", err)
+				return
+			}
 			if p.Y == height-1 && !loop {
 				log.Printf("done %s", time.Since(now))
 				return
@@ -115,10 +122,11 @@ func showImage(display devices.Display, img image.Image, sleep time.Duration, lo
 func mainImpl() error {
 	verbose := flag.Bool("v", false, "verbose mode")
 	pin := flag.String("p", "", "GPIO pin to use")
-
-	numPixels := flag.Int("n", 150, "number of pixels on the strip")
-	hz := flag.Int("s", 400000, "speed in Hz")
-	channels := flag.Int("channels", 3, "number of color channels, use 4 for RGBW")
+	spiID := flag.String("spi", "", "Use SPI MOSI implemntation")
+	clear := flag.Bool("clear", false, "Blank the lights on exit")
+	numPixels := flag.Int("n", nrzled.DefaultOpts.NumPixels, "number of pixels on the strip")
+	hz := flag.Int("s", int(nrzled.DefaultOpts.Freq/physic.Hertz), "speed in Hz")
+	channels := flag.Int("channels", nrzled.DefaultOpts.Channels, "number of color channels, use 4 for RGBW")
 	color := flag.String("color", "208020", "hex encoded color to show")
 	imgName := flag.String("img", "", "image to load")
 	lineMs := flag.Int("linems", 2, "number of ms to show each line of the image")
@@ -135,20 +143,53 @@ func mainImpl() error {
 	if _, err := host.Init(); err != nil {
 		return err
 	}
+	var disp *nrzled.Dev
+	{
+		var err error
+		if spiID != nil {
+			s, err := spireg.Open(*spiID)
+			if err != nil {
+				return err
+			}
+			defer s.Close()
 
+			if p, ok := s.(spi.Pins); ok {
+				log.Printf("Using pins CLK: %s  MOSI: %s  MISO: %s", p.CLK(), p.MOSI(), p.MISO())
+			}
+			o := nrzled.Opts{
+				NumPixels: *numPixels,
+				Channels:  *channels,
+				Freq:      2500 * physic.KiloHertz,
+			}
+			disp, err = nrzled.NewSPI(s, &o)
+			if err != nil {
+				return err
+			}
+		} else {
+			p := gpioreg.ByName(*pin)
+			if p == nil {
+				return errors.New("specify a valid pin")
+			}
+			if rp, ok := p.(gpio.RealPin); ok {
+				p = rp.Real()
+			}
+			s, ok := p.(gpiostream.PinOut)
+			if !ok {
+				return fmt.Errorf("pin %s doesn't support arbitrary bit stream", p)
+			}
+			opts := nrzled.DefaultOpts
+			opts.NumPixels = *numPixels
+			opts.Freq = physic.Frequency(*hz) * physic.Hertz
+			opts.Channels = *channels
+			if disp, err = nrzled.NewStream(s, &opts); err != nil {
+				return err
+			}
+		}
+	}
+	if *clear {
+		defer disp.Halt()
+	}
 	// Open the display device.
-	p := gpioreg.ByName(*pin)
-	if p == nil {
-		return errors.New("specify a valid pin")
-	}
-	s, ok := p.(gpiostream.PinOut)
-	if !ok {
-		return fmt.Errorf("pin %s doesn't support arbitrary bit stream", p)
-	}
-	display, err := nrzled.New(s, *numPixels, *hz, *channels)
-	if err != nil {
-		return err
-	}
 
 	// Load an image and make it loop through the pixels.
 	if len(*imgName) != 0 {
@@ -156,7 +197,7 @@ func mainImpl() error {
 		if err != nil {
 			return err
 		}
-		showImage(display, img, time.Duration(*lineMs)*time.Millisecond, *imgLoop, *imgHeight)
+		showImage(disp, img, time.Duration(*lineMs)*time.Millisecond, *imgLoop, *imgHeight)
 		return nil
 	}
 
@@ -185,7 +226,7 @@ func mainImpl() error {
 			buf[i+3] = a
 		}
 	}
-	_, err = display.Write(buf)
+	_, err = disp.Write(buf)
 	return err
 }
 

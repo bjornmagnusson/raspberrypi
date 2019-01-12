@@ -5,62 +5,11 @@
 package i2creg
 
 import (
-	"flag"
-	"fmt"
-	"log"
-	"sort"
-	"strings"
 	"testing"
 
 	"periph.io/x/periph/conn/i2c"
+	"periph.io/x/periph/conn/physic"
 )
-
-func ExampleAll() {
-	// Enumerate all I²C buses available and the corresponding pins.
-	fmt.Print("I²C buses available:\n")
-	for _, ref := range All() {
-		fmt.Printf("- %s\n", ref.Name)
-		if ref.Number != -1 {
-			fmt.Printf("  %d\n", ref.Number)
-		}
-		if len(ref.Aliases) != 0 {
-			fmt.Printf("  %s\n", strings.Join(ref.Aliases, " "))
-		}
-
-		b, err := ref.Open()
-		if err != nil {
-			fmt.Printf("  Failed to open: %v", err)
-		}
-		if p, ok := b.(i2c.Pins); ok {
-			fmt.Printf("  SDA: %s", p.SDA())
-			fmt.Printf("  SCL: %s", p.SCL())
-		}
-		if err := b.Close(); err != nil {
-			fmt.Printf("  Failed to close: %v", err)
-		}
-	}
-}
-
-func ExampleOpen() {
-	// On linux, the following calls will likely open the same bus.
-	Open("/dev/i2c-1")
-	Open("I2C1")
-	Open("1")
-
-	// How a command line tool may let the user choose an I²C bus, yet default to
-	// the first bus known.
-	name := flag.String("i2c", "", "I²C bus to use")
-	flag.Parse()
-	b, err := Open(*name)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer b.Close()
-	// Use b...
-	b.Tx(23, []byte("cmd"), nil)
-}
-
-//
 
 func TestOpen(t *testing.T) {
 	defer reset()
@@ -110,11 +59,15 @@ func TestAll(t *testing.T) {
 	}
 }
 
-func TestRefList(t *testing.T) {
-	l := refList{&Ref{Name: "b"}, &Ref{Name: "a"}}
-	sort.Sort(l)
-	if l[0].Name != "a" || l[1].Name != "b" {
-		t.Fatal(l)
+func TestRef(t *testing.T) {
+	out := insertRef(nil, &Ref{Name: "b"})
+	out = insertRef(out, &Ref{Name: "d"})
+	out = insertRef(out, &Ref{Name: "c"})
+	out = insertRef(out, &Ref{Name: "a"})
+	for i, l := range []string{"a", "b", "c", "d"} {
+		if out[i].Name != l {
+			t.Fatal(out)
+		}
 	}
 }
 
@@ -205,10 +158,10 @@ func reset() {
 }
 
 type fakeBus struct {
-	speed int64
-	err   error
-	addr  uint16
-	w, r  []byte
+	freq physic.Frequency
+	err  error
+	addr uint16
+	w, r []byte
 }
 
 func (f *fakeBus) Close() error {
@@ -227,7 +180,7 @@ func (f *fakeBus) Tx(addr uint16, w, r []byte) error {
 	return f.err
 }
 
-func (f *fakeBus) SetSpeed(hz int64) error {
-	f.speed = hz
+func (f *fakeBus) SetSpeed(freq physic.Frequency) error {
+	f.freq = freq
 	return f.err
 }

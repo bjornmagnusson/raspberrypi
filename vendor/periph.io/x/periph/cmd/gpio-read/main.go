@@ -15,7 +15,6 @@ import (
 
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
-	"periph.io/x/periph/host"
 )
 
 func printLevel(l gpio.Level) error {
@@ -31,9 +30,8 @@ func mainImpl() error {
 	pullUp := flag.Bool("u", false, "pull up")
 	pullDown := flag.Bool("d", false, "pull down")
 	edges := flag.Bool("e", false, "wait for edges")
-	verbose := flag.Bool("v", false, "enable verbose logs")
+	verbose := flag.Bool("v", false, "verbose mode")
 	flag.Parse()
-
 	if !*verbose {
 		log.SetOutput(ioutil.Discard)
 	}
@@ -54,7 +52,7 @@ func mainImpl() error {
 		return errors.New("specify GPIO pin to read")
 	}
 
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 
@@ -72,7 +70,10 @@ func mainImpl() error {
 	if *edges {
 		for {
 			p.WaitForEdge(-1)
-			printLevel(p.Read())
+			if err := printLevel(p.Read()); err != nil {
+				// Do not return an error on pipe fail, just exit.
+				return nil
+			}
 		}
 	}
 	return printLevel(p.Read())

@@ -6,71 +6,12 @@ package spireg
 
 import (
 	"errors"
-	"flag"
-	"fmt"
-	"log"
-	"sort"
-	"strings"
 	"testing"
 
 	"periph.io/x/periph/conn"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 )
-
-func ExampleAll() {
-	// Enumerate all SPI ports available and the corresponding pins.
-	fmt.Print("SPI ports available:\n")
-	for _, ref := range All() {
-		fmt.Printf("- %s\n", ref.Name)
-		if ref.Number != -1 {
-			fmt.Printf("  %d\n", ref.Number)
-		}
-		if len(ref.Aliases) != 0 {
-			fmt.Printf("  %s\n", strings.Join(ref.Aliases, " "))
-		}
-
-		b, err := ref.Open()
-		if err != nil {
-			fmt.Printf("  Failed to open: %v", err)
-		}
-		if p, ok := b.(spi.Pins); ok {
-			fmt.Printf("  CLK : %s", p.CLK())
-			fmt.Printf("  MOSI: %s", p.MOSI())
-			fmt.Printf("  MISO: %s", p.MISO())
-			fmt.Printf("  CS  : %s", p.CS())
-		}
-		if err := b.Close(); err != nil {
-			fmt.Printf("  Failed to close: %v", err)
-		}
-	}
-}
-
-func ExampleOpen() {
-	// On linux, the following calls will likely open the same port.
-	Open("/dev/spidev1.0")
-	Open("SPI1.0")
-	Open("1")
-
-	// How a command line tool may let the user choose a SPI port, yet
-	// default to the first port known.
-	name := flag.String("spi", "", "SPI port to use")
-	flag.Parse()
-	b, err := Open(*name)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer b.Close()
-
-	// Pass b to a device driver, or if using b directly, do:
-	c, err := b.Connect(1000000, spi.Mode3, 8)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Use b...
-	c.Tx([]byte("cmd"), nil)
-}
-
-//
 
 func TestOpen(t *testing.T) {
 	defer reset()
@@ -120,11 +61,15 @@ func TestAll(t *testing.T) {
 	}
 }
 
-func TestRefList(t *testing.T) {
-	l := refList{&Ref{Name: "b"}, &Ref{Name: "a"}}
-	sort.Sort(l)
-	if l[0].Name != "a" || l[1].Name != "b" {
-		t.Fatal(l)
+func TestRef(t *testing.T) {
+	out := insertRef(nil, &Ref{Name: "b"})
+	out = insertRef(out, &Ref{Name: "d"})
+	out = insertRef(out, &Ref{Name: "c"})
+	out = insertRef(out, &Ref{Name: "a"})
+	for i, l := range []string{"a", "b", "c", "d"} {
+		if out[i].Name != l {
+			t.Fatal(out)
+		}
 	}
 }
 
@@ -225,11 +170,11 @@ func (f *fakePort) Duplex() conn.Duplex {
 	return conn.DuplexUnknown
 }
 
-func (f *fakePort) LimitSpeed(maxHz int64) error {
+func (f *fakePort) LimitSpeed(freq physic.Frequency) error {
 	return errors.New("not implemented")
 }
 
-func (f *fakePort) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (f *fakePort) Connect(freq physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
 	return f, errors.New("not implemented")
 }
 

@@ -2,23 +2,19 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/ruby:2.4.1
+      - image: docker:stable-git
     steps:
       - checkout
-      - run:
-          name: Install Docker Compose
-          command: |
-            curl -L https://github.com/docker/compose/releases/download/1.23.1/docker-compose-`uname -s`-`uname -m` > ~/docker-compose
-            chmod +x ~/docker-compose
-            sudo mv ~/docker-compose /usr/local/bin/docker-compose
-      - setup_remote_docker
+      - setup_remote_docker:
+          version: 18.05.0-ce
       - run:
           name: Build Docker image
           command: |
+            docker version
             docker run --rm --privileged multiarch/qemu-user-static:register --reset
-            docker-compose -f docker-compose.dev.yml build
+            docker build -t bjornmagnusson/pi-led .
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              TAG=${CIRCLE_TAG} docker-compose build
+              docker build -t bjornmagnusson/pi-led:${CIRCLE_TAG} .
             fi
       - run:
           name: Test examples
@@ -29,11 +25,11 @@ jobs:
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              docker-compose -f docker-compose.dev.yml push
+              docker push bjornmagnusson/pi-led
             fi
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
               docker login -u $DOCKER_USER -p $DOCKER_PASS
-              TAG=${CIRCLE_TAG} docker-compose -f docker-compose.dev.yml push
+              docker push bjornmagnusson/pi-led:${CIRCLE_TAG}
             fi
   deploy:
     docker:
@@ -43,7 +39,6 @@ jobs:
           name: Authenticate to balena-cloud
           command: |
             balena login --token $RESIN_TOKEN
-      - setup_remote_docker
       - checkout
       - deploy:
           name: Deploy to balena cloud (pi1led)

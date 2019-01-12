@@ -22,9 +22,9 @@ import (
 	"os"
 	"strconv"
 
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
-	"periph.io/x/periph/host"
 )
 
 // runTx does the I/O.
@@ -119,7 +119,7 @@ func mainImpl() error {
 		m |= spi.LSBFirst
 	}
 
-	if _, err := host.Init(); err != nil {
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 	s, err := spireg.Open(*spiID)
@@ -127,7 +127,7 @@ func mainImpl() error {
 		return err
 	}
 	defer s.Close()
-	c, err := s.Connect(int64(*hz), m, *bits)
+	c, err := s.Connect(physic.Frequency(*hz)*physic.Hertz, m, *bits)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/conntest"
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
 	"periph.io/x/periph/conn/spi"
 )
 
@@ -37,12 +38,12 @@ func (r *RecordRaw) Close() error {
 }
 
 // LimitSpeed is a no-op.
-func (r *RecordRaw) LimitSpeed(maxHz int64) error {
+func (r *RecordRaw) LimitSpeed(f physic.Frequency) error {
 	return nil
 }
 
 // Connect is a no-op.
-func (r *RecordRaw) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (r *RecordRaw) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
 	r.Lock()
 	defer r.Unlock()
 	if r.Initialized {
@@ -97,15 +98,15 @@ func (r *Record) Close() error {
 }
 
 // LimitSpeed implements spi.PortCloser.
-func (r *Record) LimitSpeed(maxHz int64) error {
+func (r *Record) LimitSpeed(f physic.Frequency) error {
 	if r.Port != nil {
-		return r.Port.LimitSpeed(maxHz)
+		return r.Port.LimitSpeed(f)
 	}
 	return nil
 }
 
 // Connect implements spi.PortCloser.
-func (r *Record) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (r *Record) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
 	r.Lock()
 	defer r.Unlock()
 	if r.Initialized {
@@ -113,7 +114,7 @@ func (r *Record) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error)
 	}
 	r.Initialized = true
 	if r.Port != nil {
-		c, err := r.Port.Connect(maxHz, mode, bits)
+		c, err := r.Port.Connect(f, mode, bits)
 		if err != nil {
 			return nil, err
 		}
@@ -249,12 +250,14 @@ func (p *Playback) Close() error {
 }
 
 // LimitSpeed implements spi.PortCloser.
-func (p *Playback) LimitSpeed(maxHz int64) error {
+func (p *Playback) LimitSpeed(f physic.Frequency) error {
 	return nil
 }
 
 // Connect implements spi.PortCloser.
-func (p *Playback) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
+func (p *Playback) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
+	p.Lock()
+	defer p.Unlock()
 	if p.Initialized {
 		return nil, conntest.Errorf("spitest: Connect cannot be called twice")
 	}
@@ -322,27 +325,27 @@ func (p *playbackConn) CS() gpio.PinOut {
 
 // Log logs all operations done on an spi.PortCloser.
 type Log struct {
-	Port spi.PortCloser
+	spi.PortCloser
 }
 
 // Close implements spi.PortCloser.
 func (l *Log) Close() error {
-	err := l.Port.Close()
-	log.Printf("%s.Close() = %v", l.Port, err)
+	err := l.PortCloser.Close()
+	log.Printf("%s.Close() = %v", l.PortCloser, err)
 	return err
 }
 
 // LimitSpeed implements spi.PortCloser.
-func (l *Log) LimitSpeed(maxHz int64) error {
-	err := l.Port.LimitSpeed(maxHz)
-	log.Printf("%s.LimitSpeed(%d) = %v", l.Port, maxHz, err)
+func (l *Log) LimitSpeed(f physic.Frequency) error {
+	err := l.PortCloser.LimitSpeed(f)
+	log.Printf("%s.LimitSpeed(%s) = %v", l.PortCloser, f, err)
 	return err
 }
 
 // Connect implements spi.PortCloser.
-func (l *Log) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
-	c, err := l.Port.Connect(maxHz, mode, bits)
-	log.Printf("%s.Connect(%d, %d, %d) = %v", l.Port, maxHz, mode, bits, err)
+func (l *Log) Connect(f physic.Frequency, mode spi.Mode, bits int) (spi.Conn, error) {
+	c, err := l.PortCloser.Connect(f, mode, bits)
+	log.Printf("%s.Connect(%s, %d, %d) = %v", l.PortCloser, f, mode, bits, err)
 	return &LogConn{c}, err
 }
 
@@ -350,7 +353,7 @@ func (l *Log) Connect(maxHz int64, mode spi.Mode, bits int) (spi.Conn, error) {
 
 // LogConn logs all operations done on an spi.Conn.
 type LogConn struct {
-	Conn spi.Conn
+	spi.Conn
 }
 
 // Tx implements spi.Conn.
@@ -363,11 +366,6 @@ func (l *LogConn) Tx(w, r []byte) error {
 // TxPackets is not yet implemented.
 func (l *LogConn) TxPackets(p []spi.Packet) error {
 	return conntest.Errorf("spitest: TxPackets is not implemented")
-}
-
-// Duplex implements spi.Conn.
-func (l *LogConn) Duplex() conn.Duplex {
-	return l.Conn.Duplex()
 }
 
 //

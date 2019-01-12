@@ -5,33 +5,15 @@
 package sysfs
 
 import (
-	"fmt"
-	"log"
 	"testing"
 
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/physic"
 )
-
-func ExampleLEDByName() {
-	// Commented out due to cycle import.
-	//if _, err := host.Init(); err != nil {
-	//	log.Fatalf("failed to initialize periph: %v", err)
-	//}
-	for _, led := range LEDs {
-		fmt.Printf("- %s: %s\n", led, led.Function())
-	}
-	led, err := LEDByName("LED0")
-	if err != nil {
-		log.Fatalf("failed to find LED: %v", err)
-	}
-	led.Out(gpio.Low)
-}
-
-//
 
 func TestLEDByName(t *testing.T) {
 	if _, err := LEDByName("FOO"); err == nil {
-		t.Fail()
+		t.Fatal("expected error")
 	}
 }
 
@@ -74,6 +56,9 @@ func TestLED_not_supported(t *testing.T) {
 	}
 	if pull := l.Pull(); pull != gpio.PullNoChange {
 		t.Fatal(pull)
+	}
+	if l.PWM(gpio.DutyHalf, physic.KiloHertz) == nil {
+		t.Fatal("not supported")
 	}
 }
 

@@ -7,6 +7,9 @@ package bcm283x
 import (
 	"reflect"
 	"testing"
+
+	"periph.io/x/periph/conn/gpio/gpiostream"
+	"periph.io/x/periph/conn/physic"
 )
 
 func TestDmaStatus_String(t *testing.T) {
@@ -51,48 +54,42 @@ func TestDmaStride_String(t *testing.T) {
 
 func TestControlBlock(t *testing.T) {
 	c := controlBlock{}
-	if c.initBlock(0, 0, 0, true, true, dmaFire, 0) == nil {
+	if c.initBlock(0, 0, 0, true, true, false, false, dmaFire) == nil {
 		t.Fatal("can't set both")
 	}
-	if c.initBlock(0, 0, 0, false, false, dmaFire, 0) == nil {
+	if c.initBlock(0, 0, 0, false, false, true, true, dmaFire) == nil {
 		t.Fatal("need at least one addr")
 	}
-	if c.initBlock(0, 1, 0, true, false, dmaFire, 0) == nil {
+	if c.initBlock(0, 1, 0, true, false, false, true, dmaFire) == nil {
 		t.Fatal("srcIO requires srcAddr")
 	}
-	if c.initBlock(1, 0, 0, false, true, dmaFire, 0) == nil {
+	if c.initBlock(1, 0, 0, false, true, true, false, dmaFire) == nil {
 		t.Fatal("dstIO requires dstAddr")
 	}
-	if c.initBlock(1, 1, 0, false, false, dmaSrcIgnore, 0) == nil {
+	if c.initBlock(1, 1, 0, false, false, true, true, dmaSrcIgnore) == nil {
 		t.Fatal("must not specify anything other than clock source")
 	}
-	if c.initBlock(1, 1, 0, false, false, dmaFire, 100) == nil {
-		t.Fatal("dstIO requires dstAddr")
-	}
-	if c.initBlock(1, 1, 0, false, false, dmaFire, 1) == nil {
-		t.Fatal("dmaFire can't use waits")
-	}
 
-	if err := c.initBlock(1, 0, 0, false, false, dmaFire, 0); err != nil {
+	if err := c.initBlock(1, 0, 0, false, false, true, true, dmaFire); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.initBlock(0, 1, 0, false, false, dmaFire, 0); err != nil {
+	if err := c.initBlock(0, 1, 0, false, false, true, true, dmaFire); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.initBlock(1, 0, 0, true, false, dmaFire, 0); err != nil {
+	if err := c.initBlock(1, 0, 0, true, false, false, true, dmaFire); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.initBlock(0, 1, 0, false, true, dmaPCMTX, 0); err != nil {
+	if err := c.initBlock(0, 1, 0, false, true, true, false, dmaPCMTX); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestControlBlockGo_String(t *testing.T) {
 	c := controlBlock{}
-	if err := c.initBlock(0, 1, 0, false, true, dmaPCMTX, 0); err != nil {
+	if err := c.initBlock(0, 1, 0, false, true, false, false, dmaPCMTX); err != nil {
 		t.Fatal(err)
 	}
-	expected := "{\n  transferInfo: NoWideBursts|SrcIgnore|DstDReq|WaitResp|PCMTX,\n  srcAddr:      0x0,\n  dstAddr:      0x7e000001,\n  txLen:        0,\n  stride:       0x0,\n  nextCB:       0x0,\n}"
+	expected := "{\n  transferInfo: NoWideBursts|SrcIgnore|DstDReq|WaitResp|waits=1|PCMTX,\n  srcAddr:      0x0,\n  dstAddr:      0x7e000001,\n  txLen:        0,\n  stride:       0x0,\n  nextCB:       0x0,\n}"
 	if s := c.GoString(); s != expected {
 		t.Fatalf("%q", s)
 	}
@@ -125,7 +122,7 @@ func TestDmaChannel_GoString(t *testing.T) {
 	d := dmaChannel{}
 	d.reset()
 	d.startIO(0)
-	expected := "{\n  cs:           WaitForOutstandingWrites|Active|pp8|p8,\n  cbAddr:       0x0,\n  transferInfo: Fire,\n  srcAddr:      0x0,\n  dstAddr:      0x0,\n  txLen:        0,\n  stride:       0x0,\n  nextCB:       0x0,\n  debug:        ReadError|FIFOError|ReadLastNotSetError,\n  reserved:     {...},\n}"
+	expected := "{\n  cs:           WaitForOutstandingWrites|Active|pp8|p8,\n  cbAddr:       0x0,\n  transferInfo: Fire,\n  srcAddr:      0x0,\n  dstAddr:      0x0,\n  txLen:        0,\n  stride:       0x0,\n  nextCB:       0x0,\n  debug:        0,\n  reserved:     {...},\n}"
 	if s := d.GoString(); s != expected {
 		t.Fatalf("%q", s)
 	}
@@ -147,5 +144,22 @@ func TestStructSizes(t *testing.T) {
 	if s := reflect.TypeOf((*dmaChannel)(nil)).Elem().Size(); s != 0x100 {
 		t.Fatalf("dmaChannel size: %d", s)
 	}
+}
 
+func TestCopyStreamToDMAbuf(t *testing.T) {
+	buf := make([]uint32, 2)
+	stream := gpiostream.BitStream{
+		Bits: []byte{1, 2, 3, 4, 5, 6, 7},
+		Freq: physic.KiloHertz,
+		LSBF: false,
+	}
+	if err := copyStreamToDMABuf(&stream, buf); err != nil {
+		t.Fatal(err)
+	}
+	if buf[0] != 0x01020304 {
+		t.Fatalf("Unexpected 0x%x != 0x%x", buf[0], 0x01020304)
+	}
+	if buf[1] != 0x05060700 {
+		t.Fatalf("Unexpected 0x%x != 0x%x", buf[1], 0x05060700)
+	}
 }

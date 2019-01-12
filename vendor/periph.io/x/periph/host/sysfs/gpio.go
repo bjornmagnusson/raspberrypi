@@ -15,8 +15,11 @@ import (
 	"time"
 
 	"periph.io/x/periph"
+	"periph.io/x/periph/conn"
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/host/fs"
 )
 
@@ -47,43 +50,9 @@ type Pin struct {
 	buf        [4]byte   // scratch buffer for Function(), Read() and Out()
 }
 
+// String implements conn.Resource.
 func (p *Pin) String() string {
 	return p.name
-}
-
-// Name implements pins.Pin.
-func (p *Pin) Name() string {
-	return p.name
-}
-
-// Number implements pins.Pin.
-func (p *Pin) Number() int {
-	return p.number
-}
-
-// Function implements pins.Pin.
-func (p *Pin) Function() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	// TODO(maruel): There's an internal bug which causes p.direction to be
-	// invalid (!?) Need to figure it out ASAP.
-	if err := p.open(); err != nil {
-		return "ERR"
-	}
-	if _, err := seekRead(p.fDirection, p.buf[:]); err != nil {
-		return "ERR"
-	}
-	if p.buf[0] == 'i' && p.buf[1] == 'n' {
-		p.direction = dIn
-	} else if p.buf[0] == 'o' && p.buf[1] == 'u' && p.buf[2] == 't' {
-		p.direction = dOut
-	}
-	if p.direction == dIn {
-		return "In/" + p.Read().String()
-	} else if p.direction == dOut {
-		return "Out/" + p.Read().String()
-	}
-	return "ERR"
 }
 
 // Halt implements conn.Resource.
@@ -92,13 +61,75 @@ func (p *Pin) Function() string {
 func (p *Pin) Halt() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := p.haltEdge(); err != nil {
-		return err
-	}
-	return nil
+	return p.haltEdge()
 }
 
-// In setups a pin as an input.
+// Name implements pin.Pin.
+func (p *Pin) Name() string {
+	return p.name
+}
+
+// Number implements pin.Pin.
+func (p *Pin) Number() int {
+	return p.number
+}
+
+// Function implements pin.Pin.
+func (p *Pin) Function() string {
+	return string(p.Func())
+}
+
+// Func implements pin.PinFunc.
+func (p *Pin) Func() pin.Func {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// TODO(maruel): There's an internal bug which causes p.direction to be
+	// invalid (!?) Need to figure it out ASAP.
+	if err := p.open(); err != nil {
+		return pin.Func("ERR")
+	}
+	if _, err := seekRead(p.fDirection, p.buf[:]); err != nil {
+		return pin.Func("ERR")
+	}
+	if p.buf[0] == 'i' && p.buf[1] == 'n' {
+		p.direction = dIn
+	} else if p.buf[0] == 'o' && p.buf[1] == 'u' && p.buf[2] == 't' {
+		p.direction = dOut
+	}
+	if p.direction == dIn {
+		if p.Read() {
+			return gpio.IN_HIGH
+		}
+		return gpio.IN_LOW
+	} else if p.direction == dOut {
+		if p.Read() {
+			return gpio.OUT_HIGH
+		}
+		return gpio.OUT_LOW
+	}
+	return pin.Func("ERR")
+}
+
+// SupportedFuncs implements pin.PinFunc.
+func (p *Pin) SupportedFuncs() []pin.Func {
+	return []pin.Func{gpio.IN, gpio.OUT}
+}
+
+// SetFunc implements pin.PinFunc.
+func (p *Pin) SetFunc(f pin.Func) error {
+	switch f {
+	case gpio.IN:
+		return p.In(gpio.PullNoChange, gpio.NoEdge)
+	case gpio.OUT_HIGH:
+		return p.Out(gpio.High)
+	case gpio.OUT, gpio.OUT_LOW:
+		return p.Out(gpio.Low)
+	default:
+		return p.wrap(errors.New("unsupported function"))
+	}
+}
+
+// In implements gpio.PinIn.
 func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 	if pull != gpio.PullNoChange && pull != gpio.Float {
 		return p.wrap(errors.New("doesn't support pull-up/pull-down"))
@@ -131,24 +162,28 @@ func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 				return p.wrap(err)
 			}
 			if err = p.event.MakeEvent(p.fValue.Fd()); err != nil {
-				p.fEdge.Close()
+				_ = p.fEdge.Close()
 				p.fEdge = nil
 				return p.wrap(err)
 			}
 		}
-		if p.edge != edge {
-			var b []byte
-			switch edge {
-			case gpio.RisingEdge:
-				b = bRising
-			case gpio.FallingEdge:
-				b = bFalling
-			case gpio.BothEdges:
-				b = bBoth
-			}
-			if err := seekWrite(p.fEdge, b); err != nil {
-				return p.wrap(err)
-			}
+		// Always reset the edge detection mode to none after starting the epoll
+		// otherwise edges are not always delivered, as observed on an Allwinner A20
+		// running kernel 4.14.14.
+		if err := seekWrite(p.fEdge, bNone); err != nil {
+			return p.wrap(err)
+		}
+		var b []byte
+		switch edge {
+		case gpio.RisingEdge:
+			b = bRising
+		case gpio.FallingEdge:
+			b = bFalling
+		case gpio.BothEdges:
+			b = bBoth
+		}
+		if err := seekWrite(p.fEdge, b); err != nil {
+			return p.wrap(err)
 		}
 	}
 	p.edge = edge
@@ -165,6 +200,7 @@ func (p *Pin) In(pull gpio.Pull, edge gpio.Edge) error {
 	return nil
 }
 
+// Read implements gpio.PinIn.
 func (p *Pin) Read() gpio.Level {
 	// There's no lock here.
 	if p.fValue == nil {
@@ -184,8 +220,7 @@ func (p *Pin) Read() gpio.Level {
 	return gpio.Low
 }
 
-// WaitForEdge does edge detection, returns once one is detected and implements
-// gpio.PinIn.
+// WaitForEdge implements gpio.PinIn.
 func (p *Pin) WaitForEdge(timeout time.Duration) bool {
 	// Run lockless, as the normal use is to call in a busy loop.
 	var ms int
@@ -213,13 +248,23 @@ func (p *Pin) WaitForEdge(timeout time.Duration) bool {
 	}
 }
 
-// Pull returns gpio.PullNoChange since gpio sysfs has no support for input
-// pull resistor.
+// Pull implements gpio.PinIn.
+//
+// It returns gpio.PullNoChange since gpio sysfs has no support for input pull
+// resistor.
 func (p *Pin) Pull() gpio.Pull {
 	return gpio.PullNoChange
 }
 
-// Out sets a pin as output; implements gpio.PinOut.
+// DefaultPull implements gpio.PinIn.
+//
+// It returns gpio.PullNoChange since gpio sysfs has no support for input pull
+// resistor.
+func (p *Pin) DefaultPull() gpio.Pull {
+	return gpio.PullNoChange
+}
+
+// Out implements gpio.PinOut.
 func (p *Pin) Out(l gpio.Level) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -255,6 +300,13 @@ func (p *Pin) Out(l gpio.Level) error {
 	return nil
 }
 
+// PWM implements gpio.PinOut.
+//
+// This is not supported on sysfs.
+func (p *Pin) PWM(gpio.Duty, physic.Frequency) error {
+	return p.wrap(errors.New("pwm is not supported via sysfs"))
+}
+
 //
 
 // open opens the gpio sysfs handle to /value and /direction.
@@ -265,11 +317,11 @@ func (p *Pin) open() error {
 		return p.err
 	}
 
-	if exportHandle == nil {
+	if drvGPIO.exportHandle == nil {
 		return errors.New("sysfs gpio is not initialized")
 	}
 	var err error
-	_, err = exportHandle.Write([]byte(strconv.Itoa(p.number)))
+	_, err = drvGPIO.exportHandle.Write([]byte(strconv.Itoa(p.number)))
 	if err != nil && !isErrBusy(err) {
 		p.err = err
 		if os.IsPermission(p.err) {
@@ -301,7 +353,7 @@ func (p *Pin) open() error {
 	p.fDirection, err = fileIOOpen(p.root+"direction", os.O_RDWR)
 	if err != nil {
 		p.err = err
-		p.fValue.Close()
+		_ = p.fValue.Close()
 		p.fValue = nil
 	}
 	return p.err
@@ -325,8 +377,6 @@ func (p *Pin) wrap(err error) error {
 }
 
 //
-
-var exportHandle io.Writer // handle to /sys/class/gpio/export
 
 type direction int
 
@@ -368,6 +418,7 @@ func readInt(path string) (int, error) {
 
 // driverGPIO implements periph.Driver.
 type driverGPIO struct {
+	exportHandle io.Writer // handle to /sys/class/gpio/export
 }
 
 func (d *driverGPIO) String() string {
@@ -375,6 +426,10 @@ func (d *driverGPIO) String() string {
 }
 
 func (d *driverGPIO) Prerequisites() []string {
+	return nil
+}
+
+func (d *driverGPIO) After() []string {
 	return nil
 }
 
@@ -405,7 +460,7 @@ func (d *driverGPIO) Init() (bool, error) {
 			return true, err
 		}
 	}
-	exportHandle, err = fileIOOpen("/sys/class/gpio/export", os.O_WRONLY)
+	drvGPIO.exportHandle, err = fileIOOpen("/sys/class/gpio/export", os.O_WRONLY)
 	if os.IsPermission(err) {
 		return true, fmt.Errorf("need more access, try as root or setup udev rules: %v", err)
 	}
@@ -433,21 +488,28 @@ func (d *driverGPIO) parseGPIOChip(path string) error {
 			root:   fmt.Sprintf("/sys/class/gpio/gpio%d/", i),
 		}
 		Pins[i] = p
-		if err := gpioreg.Register(p, false); err != nil {
+		if err := gpioreg.Register(p); err != nil {
 			return err
 		}
-		// We cannot use gpio.MapFunction() since there is no API to determine this.
+		// If there is a CPU memory mapped gpio pin with the same number, the
+		// driver has to unregister this pin and map its own after.
+		if err := gpioreg.RegisterAlias(strconv.Itoa(i), p.name); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func init() {
 	if isLinux {
-		periph.MustRegister(&driverGPIO{})
+		periph.MustRegister(&drvGPIO)
 	}
 }
 
+var drvGPIO driverGPIO
+
+var _ conn.Resource = &Pin{}
 var _ gpio.PinIn = &Pin{}
 var _ gpio.PinOut = &Pin{}
 var _ gpio.PinIO = &Pin{}
-var _ fmt.Stringer = &Pin{}
+var _ pin.PinFunc = &Pin{}

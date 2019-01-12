@@ -4,14 +4,13 @@
 
 package conn
 
-import "fmt"
+import "strconv"
 
 // Resource is a basic resource (like a gpio pin) or a device.
-//
-// Implementers are expected to also implement fmt.Stringer. In this case,
-// String() must return a name representing this resource in a descriptive way
-// for the user.
 type Resource interface {
+	// String returns a human readable identifier representing this resource in a
+	// descriptive way for the user. It is the same signature as fmt.Stringer.
+	String() string
 	// Halt stops the resource.
 	//
 	// Unlike a Conn, a Resource may not be closable, On the other hand, a
@@ -49,7 +48,7 @@ var duplexIndex = [...]uint8{0, 13, 17, 21}
 
 func (i Duplex) String() string {
 	if i < 0 || i >= Duplex(len(duplexIndex)-1) {
-		return fmt.Sprintf("Duplex(%d)", i)
+		return "Duplex(" + strconv.Itoa(int(i)) + ")"
 	}
 	return duplexName[duplexIndex[i]:duplexIndex[i+1]]
 }
@@ -74,6 +73,7 @@ func (i Duplex) String() string {
 //
 // - io.Closer for the owner of the communication channel.
 type Conn interface {
+	String() string
 	// Tx does a single transaction.
 	//
 	// For full duplex protocols (generally SPI, UART), the two buffers must have

@@ -5,12 +5,13 @@
 package ds18b20
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"periph.io/x/periph/conn/onewire"
 	"periph.io/x/periph/conn/onewire/onewiretest"
-	"periph.io/x/periph/devices"
+	"periph.io/x/periph/conn/physic"
 )
 
 func TestNew_fail_resolution(t *testing.T) {
@@ -29,9 +30,9 @@ func TestNew_fail_read(t *testing.T) {
 	}
 }
 
-// TestTemperature tests a temperature conversion on a ds18b20 using
+// TestSense tests a temperature conversion on a ds18b20 using
 // recorded bus transactions.
-func TestTemperature(t *testing.T) {
+func TestSense(t *testing.T) {
 	// set-up playback using the recording output.
 	ops := []onewiretest.IO{
 		// Match ROM + Read Scratchpad (init)
@@ -51,29 +52,29 @@ func TestTemperature(t *testing.T) {
 		},
 	}
 	var addr onewire.Address = 0x740000070e41ac28
-	var temp devices.Celsius = 30000 // 30.000°C
 	bus := onewiretest.Playback{Ops: ops}
 	dev, err := New(&bus, addr, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := dev.String(); s != "DS18B20{{playback 8358680938703596584}}" {
+	if s := dev.String(); s != "DS18B20{playback(0x740000070e41ac28)}" {
 		t.Fatal(s)
 	}
 	// Read the temperature.
-	t0 := time.Now()
-	now, err := dev.Temperature()
-	dt := time.Since(t0)
-	if err != nil {
+	var sleeps []time.Duration
+	sleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	defer func() { sleep = func(time.Duration) {} }()
+	e := physic.Env{}
+	if err := dev.Sense(&e); err != nil {
 		t.Fatal(err)
 	}
 	// Expect the correct value.
-	if now != temp {
-		t.Errorf("expected %s, got %s", temp.String(), now.String())
+	if expected := 30*physic.Celsius + physic.ZeroCelsius; e.Temperature != expected {
+		t.Errorf("expected %s, got %s", expected.String(), e.Temperature.String())
 	}
 	// Expect it to take >187ms
-	if dt < 188*time.Millisecond {
-		t.Errorf("expected conversion to take >187ms, took %s", dt)
+	if !reflect.DeepEqual(sleeps, []time.Duration{188 * time.Millisecond}) {
+		t.Errorf("expected conversion to sleep: %v", sleeps)
 	}
 	if err := dev.Halt(); err != nil {
 		t.Fatal(err)
@@ -93,13 +94,15 @@ func TestConvertAll(t *testing.T) {
 	}
 	bus := onewiretest.Playback{Ops: ops}
 	// Perform the conversion
-	t0 := time.Now()
+	var sleeps []time.Duration
+	sleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	defer func() { sleep = func(time.Duration) {} }()
 	if err := ConvertAll(&bus, 9); err != nil {
 		t.Fatal(err)
 	}
 	// Expect it to take >93ms
-	if dt := time.Since(t0); dt < 94*time.Millisecond {
-		t.Errorf("expected conversion to take >93ms, took %s", dt)
+	if !reflect.DeepEqual(sleeps, []time.Duration{94 * time.Millisecond}) {
+		t.Errorf("expected conversion to take >93ms, took %s", sleeps)
 	}
 	if err := bus.Close(); err != nil {
 		t.Fatal(err)
@@ -118,6 +121,10 @@ func TestConvertAll_fail_io(t *testing.T) {
 	if err := ConvertAll(bus, 9); err == nil {
 		t.Fatal("invalid io")
 	}
+}
+
+func init() {
+	sleep = func(time.Duration) {}
 }
 
 /* Commented out in order not to import periph/host, need to move to smoke test
@@ -179,7 +186,7 @@ func TestRecordTemp(t *testing.T) {
 		t.Logf("  %#v,", op)
 	}
 	t.Log("}")
-	t.Logf("var temp devices.Celsius = %d // %s", temp, temp.String())
+	t.Logf("var temp physic.Temperature = %d  // %s", temp, temp.String())
 }
 
 //

@@ -6,40 +6,32 @@ package gpio
 
 import (
 	"fmt"
-	"log"
 	"testing"
 	"time"
+
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 )
 
-func ExamplePinIn() {
-	//p := gpioreg.ByName("GPIO6")
-	var p PinIn
-	if err := p.In(PullDown, RisingEdge); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("%s is %s\n", p, p.Read())
-	for p.WaitForEdge(-1) {
-		fmt.Printf("%s went %s\n", p, High)
-	}
-}
-
-func ExamplePinOut() {
-	//p := gpioreg.ByName("GPIO6")
-	var p PinOut
-	if err := p.Out(High); err != nil {
-		log.Fatal(err)
-	}
-}
-
 func TestStrings(t *testing.T) {
-	if Low.String() != "Low" || High.String() != "High" {
-		t.Fail()
+	data := []struct {
+		t fmt.Stringer
+		s string
+	}{
+		{Low, "Low"},
+		{High, "High"},
+		{PullNoChange, "PullNoChange"},
+		{Float, "Float"},
+		{PullDown, "PullDown"},
+		{PullUp, "PullUp"},
+		{Pull(100), "Pull(100)"},
+		{NoEdge, "NoEdge"},
+		{Edge(100), "Edge(100)"},
 	}
-	if Float.String() != "Float" || Pull(100).String() != "Pull(100)" {
-		t.Fail()
-	}
-	if NoEdge.String() != "NoEdge" || Edge(100).String() != "Edge(100)" {
-		t.Fail()
+	for i, l := range data {
+		if a := l.t.String(); a != l.s {
+			t.Fatalf("#%d: %s != %s", i, l.s, a)
+		}
 	}
 }
 
@@ -96,10 +88,10 @@ func TestParseDuty(t *testing.T) {
 		{"0", 0, false},
 		{"0%", 0, false},
 		{"1", 1, false},
-		{"1%", 655, false},
+		{"1%", 167772, false},
 		{"100%", DutyMax, false},
-		{"65535", DutyMax, false},
-		{"65536", 0, true},
+		{"16777216", 16777216, false},
+		{"16777217", 0, true},
 		{"101%", 0, true},
 		{"-1", 0, true},
 		{"-1%", 0, true},
@@ -112,13 +104,54 @@ func TestParseDuty(t *testing.T) {
 }
 
 func TestInvalid(t *testing.T) {
-	if INVALID.String() != "INVALID" || INVALID.Name() != "INVALID" || INVALID.Number() != -1 || INVALID.Function() != "" {
-		t.Fail()
+	// conn.Resource
+	if s := INVALID.String(); s != "INVALID" {
+		t.Fatal(s)
 	}
-	if INVALID.In(Float, NoEdge) != errInvalidPin || INVALID.Read() != Low || INVALID.WaitForEdge(time.Minute) || INVALID.Pull() != PullNoChange {
-		t.Fail()
+	if err := INVALID.Halt(); err != nil {
+		t.Fatal(err)
 	}
-	if INVALID.Out(Low) != errInvalidPin {
-		t.Fail()
+	// pin.Pin
+	if s := INVALID.Name(); s != "INVALID" {
+		t.Fatal(s)
+	}
+	if n := INVALID.Number(); n != -1 {
+		t.Fatal(n)
+	}
+	if s := INVALID.Function(); s != "" {
+		t.Fatal(s)
+	}
+	// gpio.PinIn
+	if err := INVALID.In(Float, NoEdge); err != errInvalidPin {
+		t.Fatal(err)
+	}
+	if l := INVALID.Read(); l != Low {
+		t.Fatal(l)
+	}
+	if INVALID.WaitForEdge(time.Minute) {
+		t.Fatal("unexpected edge")
+	}
+	if p := INVALID.Pull(); p != PullNoChange {
+		t.Fatal(p)
+	}
+	if p := INVALID.DefaultPull(); p != PullNoChange {
+		t.Fatal(p)
+	}
+	// gpio.PinOut
+	if err := INVALID.Out(Low); err != errInvalidPin {
+		t.Fatal(err)
+	}
+	if err := INVALID.PWM(DutyMax, physic.Hertz); err != errInvalidPin {
+		t.Fatal(err)
+	}
+	// pin.PinFunc
+	if f := INVALID.(pin.PinFunc).Func(); f != pin.FuncNone {
+		t.Fatal(f)
+	}
+	if f := INVALID.(pin.PinFunc).SupportedFuncs(); len(f) != 0 {
+		t.Fatal(f)
+	}
+	if err := INVALID.(pin.PinFunc).SetFunc(IN_LOW); err == nil {
+		t.Fatal("can't set func")
 	}
 }

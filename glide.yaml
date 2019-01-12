@@ -1,6 +1,6 @@
 package: .
 import:
 - package: periph.io/x/periph
-  version: v2.1.0
+  version: v3.4.0
 - package: github.com/rs/cors
   version: ^1.0.0

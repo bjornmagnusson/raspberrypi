@@ -9,14 +9,18 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"periph.io/x/periph/conn/physic"
 )
 
-var clockMemory *clockMap
+// errClockRegister is returned in a situation where the clock memory is not
+// working as expected. It is mocked in tests.
+var errClockRegister = errors.New("can't write to clock divisor CPU register")
 
 // Clock sources frequency in hertz.
 const (
-	clk19dot2MHz = 19200000
-	clk500MHz    = 500000000
+	clk19dot2MHz = 19200 * physic.KiloHertz
+	clk500MHz    = 500 * physic.MegaHertz
 )
 
 const (
@@ -158,16 +162,16 @@ type clock struct {
 // Favorizes high clock divisor value over high clock wait cycles. This means
 // that the function is slower than it could be, but results in more stable
 // clock.
-func findDivisorExact(srcHz, desiredHz uint64, maxWaitCycles int) (int, int) {
-	if srcHz > (desiredHz*uint64(maxWaitCycles)*uint64(clockDiviMax)) || srcHz < desiredHz || srcHz%desiredHz != 0 {
+func findDivisorExact(src, desired physic.Frequency, maxWaitCycles uint32) (uint32, uint32) {
+	if src < desired || src%desired != 0 || src/physic.Frequency(maxWaitCycles*clockDiviMax) > desired {
 		// Can't attain without oversampling (too low) or desired frequency is
 		// higher than the source (too high) or is not a multiple.
 		return 0, 0
 	}
-	factor := int(srcHz / desiredHz)
+	factor := uint32(src / desired)
 	// TODO(maruel): Only iterate over valid divisors to save a bit more
 	// calculations. Since it's is only doing 32 loops, this is not a big deal.
-	for wait := 1; wait <= maxWaitCycles; wait++ {
+	for wait := uint32(1); wait <= maxWaitCycles; wait++ {
 		if rest := factor % wait; rest != 0 {
 			continue
 		}
@@ -188,20 +192,20 @@ func findDivisorExact(srcHz, desiredHz uint64, maxWaitCycles int) (int, int) {
 // Allowed oversampling depends on the desiredHz. Cap oversampling because
 // oversampling at 10x in the 1Mhz range becomes unreasonable in term of
 // memory usage.
-func findDivisorOversampled(srcHz, desiredHz uint64, maxWaitCycles int) (int, int, uint64) {
-	//log.Printf("findDivisorOversampled(%d, %d, %d)", srcHz, desiredHz, maxWaitCycles)
+func findDivisorOversampled(src, desired physic.Frequency, maxWaitCycles uint32) (uint32, uint32, physic.Frequency) {
+	//log.Printf("findDivisorOversampled(%s, %s, %d)", src, desired, maxWaitCycles)
 	// There are 2 reasons:
-	// - desiredHz is so low it is not possible to lower srcHz to this frequency
+	// - desired is so low it is not possible to lower src to this frequency
 	// - not a multiple, there's a need for a prime number
 	// TODO(maruel): Rewrite without a loop, this is not needed. Leverage primes
 	// to reduce the number of iterations.
-	for multiple := uint64(2); ; multiple++ {
-		newHz := multiple * desiredHz
-		if newHz > 100000 && multiple > 10 {
+	for multiple := physic.Frequency(2); ; multiple++ {
+		n := multiple * desired
+		if n > 100*physic.KiloHertz && multiple > 10 {
 			break
 		}
-		if clk, wait := findDivisorExact(srcHz, newHz, maxWaitCycles); clk != 0 {
-			return clk, wait, newHz
+		if clk, wait := findDivisorExact(src, n, maxWaitCycles); clk != 0 {
+			return clk, wait, n
 		}
 	}
 	return 0, 0, 0
@@ -211,35 +215,35 @@ func findDivisorOversampled(srcHz, desiredHz uint64, maxWaitCycles int) (int, in
 //
 // It calculates the clock source, the clock divisor and the wait cycles, if
 // applicable. Wait cycles is 'div minus 1'.
-func calcSource(hz uint64, maxWaitCycles int) (clockCtl, int, int, uint64, error) {
-	if hz < 1 {
-		return 0, 0, 0, 0, fmt.Errorf("bcm283x-clock: desired frequency %dHz must be >1hz", hz)
+func calcSource(f physic.Frequency, maxWaitCycles uint32) (clockCtl, uint32, uint32, physic.Frequency, error) {
+	if f < physic.Hertz {
+		return 0, 0, 0, 0, fmt.Errorf("bcm283x-clock: desired frequency %s must be >1hz", f)
 	}
-	if hz > 125*1000*1000 {
-		return 0, 0, 0, 0, fmt.Errorf("bcm283x-clock: desired frequency %dHz is too high", hz)
+	if f > 125*physic.MegaHertz {
+		return 0, 0, 0, 0, fmt.Errorf("bcm283x-clock: desired frequency %s is too high", f)
 	}
 	// http://elinux.org/BCM2835_datasheet_errata states that clockSrc19dot2MHz
 	// is the cleanest clock source so try it first.
-	div, wait := findDivisorExact(clk19dot2MHz, hz, maxWaitCycles)
+	div, wait := findDivisorExact(clk19dot2MHz, f, maxWaitCycles)
 	if div != 0 {
-		return clockSrc19dot2MHz, div, wait, hz, nil
+		return clockSrc19dot2MHz, div, wait, f, nil
 	}
 	// Try 500Mhz.
-	div, wait = findDivisorExact(clk500MHz, hz, maxWaitCycles)
+	div, wait = findDivisorExact(clk500MHz, f, maxWaitCycles)
 	if div != 0 {
-		return clockSrcPLLD, div, wait, hz, nil
+		return clockSrcPLLD, div, wait, f, nil
 	}
 
 	// Try with up to 10x oversampling. This is generally useful for lower
 	// frequencies, below 10kHz. Prefer the one with less oversampling. Only for
 	// non-aliased matches.
-	div19, wait19, hz19 := findDivisorOversampled(clk19dot2MHz, hz, maxWaitCycles)
-	div500, wait500, hz500 := findDivisorOversampled(clk500MHz, hz, maxWaitCycles)
-	if div19 != 0 && (div500 == 0 || hz19 < hz500) {
-		return clockSrc19dot2MHz, div19, wait19, hz19, nil
+	div19, wait19, f19 := findDivisorOversampled(clk19dot2MHz, f, maxWaitCycles)
+	div500, wait500, f500 := findDivisorOversampled(clk500MHz, f, maxWaitCycles)
+	if div19 != 0 && (div500 == 0 || f19 < f500) {
+		return clockSrc19dot2MHz, div19, wait19, f19, nil
 	}
 	if div500 != 0 {
-		return clockSrcPLLD, div500, wait500, hz500, nil
+		return clockSrcPLLD, div500, wait500, f500, nil
 	}
 	return 0, 0, 0, 0, errors.New("failed to find a good clock")
 }
@@ -247,21 +251,21 @@ func calcSource(hz uint64, maxWaitCycles int) (clockCtl, int, int, uint64, error
 // set changes the clock frequency to the desired value or the closest one
 // otherwise.
 //
-// hz=0 means disabled.
+// f=0 means disabled.
 //
 // maxWaitCycles is the maximum oversampling via an additional wait cycles that
 // can further divide the clock. Use 1 if no additional wait cycle is
 // available. It is expected to be dmaWaitcyclesMax+1.
 //
 // Returns the actual clock used and divisor.
-func (c *clock) set(hz uint64, maxWaitCycles int) (uint64, int, error) {
-	if hz == 0 {
+func (c *clock) set(f physic.Frequency, maxWaitCycles uint32) (physic.Frequency, uint32, error) {
+	if f == 0 {
 		c.ctl = clockPasswdCtl | clockKill
 		for c.ctl&clockBusy != 0 {
 		}
 		return 0, 0, nil
 	}
-	ctl, div, div2, actual, err := calcSource(hz, maxWaitCycles)
+	ctl, div, div2, actual, err := calcSource(f, maxWaitCycles)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -269,7 +273,7 @@ func (c *clock) set(hz uint64, maxWaitCycles int) (uint64, int, error) {
 }
 
 // setRaw sets the clock speed with the clock source and the divisor.
-func (c *clock) setRaw(ctl clockCtl, div int) error {
+func (c *clock) setRaw(ctl clockCtl, div uint32) error {
 	if div < 1 || div > clockDiviMax {
 		return errors.New("invalid clock divisor")
 	}
@@ -290,7 +294,9 @@ func (c *clock) setRaw(ctl clockCtl, div int) error {
 	Nanospin(10 * time.Nanosecond)
 	c.ctl = clockPasswdCtl | ctl | clockEnable
 	if c.div != d {
-		return errors.New("can't write to clock divisor CPU register")
+		// This error is mocked out in tests, so the code path of set() callers can
+		// follow on.
+		return errClockRegister
 	}
 	return nil
 }

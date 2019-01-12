@@ -8,23 +8,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"log"
 	"testing"
 
 	"periph.io/x/periph/host/fs"
 )
-
-func ExampleMapAsPOD() {
-	// Let's say the CPU has 4 x 32 bits memory mapped registers at the address
-	// 0xDEADBEEF.
-	var reg *[4]uint32
-	if err := MapAsPOD(0xDEADBEAF, reg); err != nil {
-		log.Fatal(err)
-	}
-	// reg now points to physical memory.
-}
-
-//
 
 func TestSlice(t *testing.T) {
 	s := Slice([]byte{4, 3, 2, 1})
@@ -170,7 +157,8 @@ func TestSlice_Errors1(t *testing.T) {
 
 func TestMapGPIO(t *testing.T) {
 	defer reset()
-	MapGPIO()
+	// It can fail, depending on the platform.
+	_, _ = MapGPIO()
 }
 
 func TestMap(t *testing.T) {
@@ -204,7 +192,8 @@ func TestMapAsPOD(t *testing.T) {
 func TestView(t *testing.T) {
 	defer reset()
 	v := View{}
-	v.Close()
+	// Close fails on invalid View.
+	_ = v.Close()
 	v.PhysAddr()
 }
 

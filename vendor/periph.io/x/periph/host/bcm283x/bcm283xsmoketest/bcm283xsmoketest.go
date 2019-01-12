@@ -5,16 +5,20 @@
 // Package bcm283xsmoketest verifies that bcm283x specific functionality work.
 //
 // This test assumes GPIO6 and GPIO13 are connected together. GPIO6 implements
-// GPCLK2 and GPIO13 imlements PWM1_OUT.
+// CLK2 and GPIO13 imlements PWM1.
 package bcm283xsmoketest
 
 import (
 	"errors"
 	"flag"
 	"fmt"
+	"reflect"
 	"time"
 
 	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/gpio/gpiostream"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/host/bcm283x"
 )
 
@@ -36,7 +40,9 @@ func (s *SmokeTest) Description() string {
 
 // Run implements the SmokeTest interface.
 func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
-	f.Parse(args)
+	if err := f.Parse(args); err != nil {
+		return err
+	}
 	if f.NArg() != 0 {
 		f.Usage()
 		return errors.New("unrecognized arguments")
@@ -54,13 +60,17 @@ func (s *SmokeTest) Run(f *flag.FlagSet, args []string) error {
 		return err
 	}
 	// Confirmed they are connected. Now ready to test.
-	if err := s.testClock(pClk, pPWM); err != nil {
+	if err := s.testPWMbyDMA(pClk, pPWM); err != nil {
 		return err
 	}
 	if err := s.testPWM(pPWM, pClk); err != nil {
 		return err
 	}
-	return nil
+	if err := s.testFunc(pClk); err != nil {
+		return err
+	}
+	return s.testStreamIn(pPWM, pClk)
+	// TODO(simokawa): test StreamOut.
 }
 
 // waitForEdge returns a channel that will return one bool, true if a edge was
@@ -80,16 +90,16 @@ func (s *SmokeTest) waitForEdge(p gpio.PinIO) <-chan bool {
 	return c
 }
 
-// testClock tests .PWM() for a clock pin.
-func (s *SmokeTest) testClock(p1, p2 *loggingPin) error {
-	fmt.Printf("- Testing clock\n")
-	const period = 200 * time.Microsecond
+// testPWMbyDMA tests .PWM() for a PWM pin driven by DMA.
+func (s *SmokeTest) testPWMbyDMA(p1, p2 *loggingPin) error {
+	fmt.Printf("- Testing DMA PWM\n")
+	const freq = 5 * physic.KiloHertz
 	if err := p2.In(gpio.PullDown, gpio.BothEdges); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
 
-	if err := p1.PWM(0, period); err != nil {
+	if err := p1.PWM(0, freq); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
@@ -97,7 +107,7 @@ func (s *SmokeTest) testClock(p1, p2 *loggingPin) error {
 		return fmt.Errorf("unexpected %s value; expected Low", p1)
 	}
 
-	if err := p1.PWM(gpio.DutyMax, period); err != nil {
+	if err := p1.PWM(gpio.DutyMax, freq); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
@@ -105,27 +115,28 @@ func (s *SmokeTest) testClock(p1, p2 *loggingPin) error {
 		return fmt.Errorf("unexpected %s value; expected High", p1)
 	}
 
-	// A clock doesn't support arbitrary duty cycle.
-	if err := p1.PWM(gpio.DutyHalf/2, period); err == nil {
-		return fmt.Errorf("expected error on %s", p1)
-	}
-
-	if err := p1.PWM(gpio.DutyHalf, period); err != nil {
+	// DMA PWM supports arbitrary duty cycle.
+	if err := p1.PWM(gpio.DutyHalf/2, freq); err != nil {
 		return err
 	}
-	return nil
+
+	if err := p1.PWM(gpio.DutyHalf, freq); err != nil {
+		return err
+	}
+
+	return p1.Halt()
 }
 
 // testPWM tests .PWM() for a PWM pin.
 func (s *SmokeTest) testPWM(p1, p2 *loggingPin) error {
-	const period = 200 * time.Microsecond
+	const freq = 5 * physic.KiloHertz
 	fmt.Printf("- Testing PWM\n")
 	if err := p2.In(gpio.PullDown, gpio.BothEdges); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
 
-	if err := p1.PWM(0, period); err != nil {
+	if err := p1.PWM(0, freq); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
@@ -133,7 +144,7 @@ func (s *SmokeTest) testPWM(p1, p2 *loggingPin) error {
 		return fmt.Errorf("unexpected %s value; expected Low", p1)
 	}
 
-	if err := p1.PWM(gpio.DutyMax, period); err != nil {
+	if err := p1.PWM(gpio.DutyMax, freq); err != nil {
 		return err
 	}
 	time.Sleep(time.Microsecond)
@@ -142,13 +153,79 @@ func (s *SmokeTest) testPWM(p1, p2 *loggingPin) error {
 	}
 
 	// A real PWM supports arbitrary duty cycle.
-	if err := p1.PWM(gpio.DutyHalf/2, period); err != nil {
+	if err := p1.PWM(gpio.DutyHalf/2, freq); err != nil {
 		return err
 	}
 
-	if err := p2.PWM(gpio.DutyHalf, period); err != nil {
+	if err := p1.PWM(gpio.DutyHalf, freq); err != nil {
 		return err
 	}
+
+	if err := p1.Halt(); err != nil {
+		return err
+	}
+	return p1.Out(gpio.Low)
+}
+
+// testFunc tests .Func(), .SetFunc().
+func (s *SmokeTest) testFunc(p *loggingPin) error {
+	if string(p.Func()) != p.Function() {
+		return fmt.Errorf("Func %q != Function %q", p.Func(), p.Function())
+	}
+	// This is dependent on testPWM() succeeding.
+	if p.Func() != gpio.IN_LOW {
+		return fmt.Errorf("Expected %q, got %q", gpio.IN_LOW, p.Func())
+	}
+	if f := p.SupportedFuncs(); !reflect.DeepEqual(f, []pin.Func{gpio.IN, gpio.OUT, gpio.CLK.Specialize(-1, 2)}) {
+		return fmt.Errorf("Unexpected functions %q", f)
+	}
+	if err := p.SetFunc(gpio.CLK); err != nil {
+		return fmt.Errorf("Failed to set %q", gpio.CLK)
+	}
+	if err := p.SetFunc(gpio.CLK.Specialize(-1, 2)); err != nil {
+		return fmt.Errorf("Failed to set %q", gpio.CLK.Specialize(-1, 2))
+	}
+	return p.Halt()
+}
+
+// testStreamIn tests gpiostream.StreamIn and gpio.PWM.
+func (s *SmokeTest) testStreamIn(p1, p2 *loggingPin) (err error) {
+	const freq = 5 * physic.KiloHertz
+	fmt.Printf("- Testing StreamIn\n")
+	defer func() {
+		if err2 := p2.Halt(); err == nil {
+			err = err2
+		}
+	}()
+	if err = p2.PWM(gpio.DutyHalf, freq); err != nil {
+		return err
+	}
+	// Gather 0.1 second of readings at 10kHz sampling rate.
+	// TODO(maruel): Support >64kb buffer.
+	b := &gpiostream.BitStream{
+		Bits: make([]byte, 1000),
+		Freq: freq * 2,
+		LSBF: true,
+	}
+	if err = p1.StreamIn(gpio.PullDown, b); err != nil {
+		fmt.Printf("%x\n", b.Bits)
+		return err
+	}
+
+	// Sum the bits, it should be close to 50%.
+	v := 0
+	for _, x := range b.Bits {
+		for j := 0; j < 8; j++ {
+			v += int((x >> uint(j)) & 1)
+		}
+	}
+	fraction := (100 * v) / (8 * len(b.Bits))
+	fmt.Println("fraction", fraction)
+	if fraction < 45 || fraction > 55 {
+		return fmt.Errorf("reading clock lead to %d%% bits On, expected 50%%", fraction)
+	}
+
+	// TODO(maruel): There should be 10 streaks.
 	return nil
 }
 
@@ -186,9 +263,19 @@ func (p *loggingPin) Out(l gpio.Level) error {
 	return p.Pin.Out(l)
 }
 
-func (p *loggingPin) PWM(duty gpio.Duty, period time.Duration) error {
-	fmt.Printf("  %s %s.PWM(%s, %s)\n", since(p.start), p, duty, period)
-	return p.Pin.PWM(duty, period)
+func (p *loggingPin) PWM(duty gpio.Duty, f physic.Frequency) error {
+	fmt.Printf("  %s %s.PWM(%s, %s)\n", since(p.start), p, duty, f)
+	return p.Pin.PWM(duty, f)
+}
+
+func (p *loggingPin) StreamIn(pull gpio.Pull, s gpiostream.Stream) error {
+	fmt.Printf("  %s %s.StreamIn(%s, %s)\n", since(p.start), p, pull, s)
+	return p.Pin.StreamIn(pull, s)
+}
+
+func (p *loggingPin) StreamOut(s gpiostream.Stream) error {
+	fmt.Printf("  %s %s.StreamOut(%s)\n", since(p.start), p, s)
+	return p.Pin.StreamOut(s)
 }
 
 // ensureConnectivity makes sure they are connected together.

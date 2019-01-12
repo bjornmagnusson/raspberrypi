@@ -6,14 +6,17 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
 
 	"periph.io/x/periph/conn/pin"
 	"periph.io/x/periph/conn/pin/pinreg"
 	"periph.io/x/periph/conn/spi"
 	"periph.io/x/periph/conn/spi/spireg"
-	"periph.io/x/periph/host"
 )
 
 func printPin(fn string, p pin.Pin) {
@@ -26,7 +29,17 @@ func printPin(fn string, p pin.Pin) {
 }
 
 func mainImpl() error {
-	if _, err := host.Init(); err != nil {
+	verbose := flag.Bool("v", false, "verbose mode")
+	flag.Parse()
+	if !*verbose {
+		log.SetOutput(ioutil.Discard)
+	}
+	log.SetFlags(log.Lmicroseconds)
+	if flag.NArg() != 0 {
+		return errors.New("unexpected argument, try -help")
+	}
+
+	if _, err := hostInit(); err != nil {
 		return err
 	}
 	for _, ref := range spireg.All() {
