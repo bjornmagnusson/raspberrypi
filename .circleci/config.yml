@@ -37,11 +37,13 @@ jobs:
     docker:
       - image: bjornmagnusson/resinio-client
     steps:
+      - checkout
+      - setup_remote_docker:
+          version: 18.05.0-ce
       - run:
           name: Authenticate to balena-cloud
           command: |
             balena login --token $RESIN_TOKEN
-      - checkout
       - deploy:
           name: Deploy to balena cloud (pi1led)
           command: |
