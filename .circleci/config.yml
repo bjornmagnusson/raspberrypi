@@ -1,4 +1,4 @@
-${DOCKER_IMAGE_NAME}${DOCKER_IMAGE_NAME}${DOCKER_IMAGE_NAME}version: 2
+version: 2
 jobs:
   build:
     docker:
@@ -14,9 +14,10 @@ jobs:
           command: |
             docker version
             docker container run --rm --privileged multiarch/qemu-user-static:register --reset
-            DOCKER_BUILDKIT=0 docker image build --cache-from ${DOCKER_IMAGE_NAME} -t ${DOCKER_IMAGE_NAME} .
+            apk --verbose add --no-cache bash
+            ./build.sh
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              DOCKER_BUILDKIT=0 docker image build -t ${DOCKER_IMAGE_NAME}:${CIRCLE_TAG} .
+              ./build.sh ${CIRCLE_TAG}
             fi
       - run:
           name: Test examples
