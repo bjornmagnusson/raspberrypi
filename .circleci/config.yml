@@ -14,10 +14,10 @@ jobs:
           command: |
             docker version
             docker container run --rm --privileged multiarch/qemu-user-static:register --reset
-            apk --verbose add --no-cache bash
-            ./build.sh
+            apk --verbose add --no-cache bash make
+            make build
             if [[ ! -z "${CIRCLE_TAG}" ]]; then
-              ./build.sh ${CIRCLE_TAG}
+              make build DOCKER_TAG=${CIRCLE_TAG}
             fi
       - run:
           name: Test examples
