@@ -1,16 +1,18 @@
 FROM golang:1.11.2 AS vendor
-RUN curl https://glide.sh/get | sh && \
-    glide init --non-interactive
-ADD glide.yaml .
-RUN glide up
+RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+RUN mkdir -p /go/src/github.com/bjornmagnusson/raspberrypi
+WORKDIR /go/src/github.com/bjornmagnusson/raspberrypi
+ADD Gopkg.toml .
+ADD led.go .
+RUN dep ensure -v
 
 FROM bjornmagnusson/rpi-golang AS builder
-COPY --from=vendor /go/vendor vendor
+COPY --from=vendor /go/src/github.com/bjornmagnusson/raspberrypi/vendor vendor
 ADD led.go .
 RUN go build -v led.go
 
 FROM bjornmagnusson/rpi-golang AS test
-COPY --from=vendor /go/vendor vendor
+COPY --from=vendor /go/src/github.com/bjornmagnusson/raspberrypi/vendor vendor
 ADD led.go .
 ADD led_test.go .
 RUN go test -v
