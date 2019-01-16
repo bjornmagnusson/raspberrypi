@@ -1,16 +1,23 @@
 workflow "docker" {
   on = "push"
-  resolves = ["Deploy app on Balena Cloud"]
+  resolves = [
+    "dinfo",
+    "env",
+  ]
 }
 
-action "dockerizing" {
+action "dinfo" {
   uses = "actions/docker/cli@master"
-  args = "docker info"
+  args = "info"
+}
+
+action "env" {
+  uses = "docker://docker:stable"
+  args = "env"
 }
 
 action "Deploy app on Balena Cloud" {
-  uses = "bjornmagnusson/actions/balena-deployer@balena-entrypoint"
-  needs "dockerizing"
+  uses = "docker://bjornmagnusson/balena-deployer:canary"
   secrets = ["BALENA_TOKEN"]
-  args = "pi1led bjornmagnusson/pi-led"
+  args = "pi1led"
 }
