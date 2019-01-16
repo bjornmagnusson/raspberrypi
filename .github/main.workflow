@@ -9,8 +9,8 @@ action "dockerizing" {
 }
 
 action "Deploy app on Balena Cloud" {
-  needs "dockerizing"
   uses = "bjornmagnusson/actions/balena-deployer@balena-entrypoint"
+  needs "dockerizing"
   secrets = ["BALENA_TOKEN"]
   args = "pi1led bjornmagnusson/pi-led"
 }
