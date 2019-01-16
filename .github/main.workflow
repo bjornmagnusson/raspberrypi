@@ -1,4 +1,4 @@
-workflow "New workflow" {
+workflow "docker" {
   on = "push"
   resolves = ["Docker Registry"]
 }
