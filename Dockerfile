@@ -3,8 +3,8 @@ RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 RUN mkdir -p /go/src/github.com/bjornmagnusson/raspberrypi
 WORKDIR /go/src/github.com/bjornmagnusson/raspberrypi
 ADD Gopkg.toml .
-ADD led.go .
-RUN dep ensure -v
+ADD Gopkg.lock .
+RUN dep ensure -v -vendor-only
 
 FROM bjornmagnusson/rpi-golang AS builder
 COPY --from=vendor /go/src/github.com/bjornmagnusson/raspberrypi/vendor vendor
