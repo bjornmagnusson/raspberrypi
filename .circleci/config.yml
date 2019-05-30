@@ -8,7 +8,7 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          version: 18.05.0-ce
+          version: 18.09.3
       - run:
           name: Build Docker image
           command: |
@@ -40,7 +40,7 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          version: 18.05.0-ce
+          version: 18.09.3
       - run:
           name: Authenticate to balena-cloud
           command: |
