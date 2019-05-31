@@ -2,7 +2,7 @@
 set -e
 
 TAG=${1:-latest}
-BUILDKIT_ENABLED=1
+BUILDKIT_ENABLED=0
 
 DOCKER_SERVER_VERSION=$(docker version --format '{{ .Server.Version }}')
 DOCKER_CLIENT_VERSION=$(docker version --format '{{ .Client.Version }}')
