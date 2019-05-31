@@ -1,9 +1,10 @@
-FROM golang:1.11.2 AS vendor
+FROM golang:1.12.5 AS vendor
 RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 RUN mkdir -p /go/src/github.com/bjornmagnusson/raspberrypi
 WORKDIR /go/src/github.com/bjornmagnusson/raspberrypi
 ADD Gopkg.toml .
 ADD led.go .
+ENV GOPROXY=https://gocenter.io
 RUN dep ensure -v
 
 FROM bjornmagnusson/rpi-golang AS builder
